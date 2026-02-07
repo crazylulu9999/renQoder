@@ -348,14 +348,51 @@ class MainWindow(ctk.CTk):
         self.audio_frame.grid(row=0, column=1, padx=(5, 10), sticky="nsew")
         self.audio_frame.grid_columnconfigure(0, weight=1)
         
-        ctk.CTkLabel(self.audio_frame, text="오디오 설정", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
+        # 오디오 설정 타이틀 + 툴팁
+        self.audio_title_frame = ctk.CTkFrame(self.audio_frame, fg_color="transparent")
+        self.audio_title_frame.grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
         
-        self.audio_option = ctk.CTkOptionMenu(
+        ctk.CTkLabel(self.audio_title_frame, text="오디오 설정", font=ctk.CTkFont(weight="bold")).pack(side="left")
+        
+        self.audio_help_icon = ctk.CTkLabel(
+            self.audio_title_frame, 
+            text=" ⓘ", 
+            text_color="#888",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            cursor="hand2"
+        )
+        self.audio_help_icon.pack(side="left", padx=2)
+        
+        audio_tooltip_text = (
+            "오디오 설정 안내\n\n"
+            "- 원본 유지 (Copy): 오디오 트랙을 재인코딩 없이 그대로 복사합니다.\n"
+            "  음질 변화가 전혀 없고 속도가 매우 빠르지만, MKV 컨테이너 사용을 권장합니다.\n"
+            "- AAC 변환 (192kbps): 오디오를 범용적인 AAC 코덱으로 변환합니다.\n"
+            "  대부분의 플레이어 및 기기에서 원활하게 재생되는 높은 호환성을 제공합니다."
+        )
+        ToolTip(self.audio_help_icon, audio_tooltip_text)
+        
+        # 라디오 버튼 변수
+        self.audio_var = ctk.StringVar(value="원본 유지 (Copy) - 빠름, MKV 권장")
+        
+        self.audio_radio_copy = ctk.CTkRadioButton(
             self.audio_frame,
-            values=["원본 유지 (Copy) - 빠름, MKV 권장", "AAC 변환 (192kbps) - 호환성 우선"],
+            text="원본 유지 (Copy) - 빠름",
+            variable=self.audio_var,
+            value="원본 유지 (Copy) - 빠름, MKV 권장",
             command=self.on_audio_change
         )
-        self.audio_option.grid(row=1, column=0, padx=15, pady=(5, 15), sticky="ew")
+        self.audio_radio_copy.grid(row=1, column=0, padx=20, pady=5, sticky="w")
+        
+        self.audio_radio_aac = ctk.CTkRadioButton(
+            self.audio_frame,
+            text="AAC 변환 (192kbps) - 호환성",
+            variable=self.audio_var,
+            value="AAC 변환 (192kbps) - 호환성 우선",
+            command=self.on_audio_change
+        )
+        self.audio_radio_aac.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="w")
+
         self.audio_mode_map = {
             "원본 유지 (Copy) - 빠름, MKV 권장": "copy",
             "AAC 변환 (192kbps) - 호환성 우선": "aac"
@@ -502,7 +539,7 @@ class MainWindow(ctk.CTk):
         self.quality_value_label.configure(text=f"현재 값: {val} {suffix}".strip())
         self.update_ui_state()
 
-    def on_audio_change(self, _):
+    def on_audio_change(self):
         self.update_ui_state()
 
     def update_ui_state(self):
@@ -511,7 +548,7 @@ class MainWindow(ctk.CTk):
             return
 
         quality = int(self.quality_slider.get())
-        audio_display_mode = self.audio_option.get()
+        audio_display_mode = self.audio_var.get()
         audio_mode = self.audio_mode_map.get(audio_display_mode, "copy")
         
         if not self.output_file or self.auto_naming:
@@ -660,7 +697,7 @@ class MainWindow(ctk.CTk):
             return
             
         quality = int(self.quality_slider.get())
-        audio_mode = self.audio_mode_map.get(self.audio_option.get(), "copy")
+        audio_mode = self.audio_mode_map.get(self.audio_var.get(), "copy")
         
         cmd = self.encoder.build_command(self.input_file, self.output_file, quality, audio_mode)
         
@@ -701,7 +738,7 @@ class MainWindow(ctk.CTk):
         self.progress_bar.set(0)
         
         quality = int(self.quality_slider.get())
-        audio_mode = self.audio_mode_map.get(self.audio_option.get(), "copy")
+        audio_mode = self.audio_mode_map.get(self.audio_var.get(), "copy")
         
         # 인코딩 스레드 시작
         thread = threading.Thread(
