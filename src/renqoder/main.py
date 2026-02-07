@@ -447,25 +447,10 @@ class MainWindow(ctk.CTk):
         self.ffmpeg_preview.insert("1.0", "파일을 선택하면 실행될 FFmpeg 명령어가 표시됩니다")
         self.ffmpeg_preview.configure(state="disabled")
 
+        # 7. 실행 섹션
         self.action_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         self.action_frame.grid(row=6, column=0, pady=(0, 15), sticky="ew")
         self.action_frame.grid_columnconfigure(0, weight=1)
-
-        # 진행률 정보 (상태 + 퍼센트)
-        self.progress_info_frame = ctk.CTkFrame(self.action_frame, fg_color="transparent")
-        self.progress_info_frame.grid(row=0, column=0, padx=10, sticky="ew")
-        
-        self.status_label = ctk.CTkLabel(self.progress_info_frame, text="대기 중", font=ctk.CTkFont(size=12))
-        self.status_label.pack(side="left")
-        
-        # 퍼센트 라벨은 버튼으로 합쳐짐 (기능 유지를 위해 숨김 처리)
-        self.progress_label = ctk.CTkLabel(self.progress_info_frame, text="0%", font=ctk.CTkFont(size=12, weight="bold"))
-        # self.progress_label.pack(side="right") 
-        
-        self.progress_bar = ctk.CTkProgressBar(self.action_frame)
-        self.progress_bar.set(0)
-        self.progress_bar.configure(progress_color=self.accent_color)
-        self.progress_bar.grid(row=1, column=0, padx=10, pady=(5, 5), sticky="ew")
 
         self.run_btn = ctk.CTkButton(
             self.action_frame, 
@@ -478,7 +463,12 @@ class MainWindow(ctk.CTk):
             state="disabled",
             command=self.start_encoding
         )
-        self.run_btn.grid(row=2, column=0, padx=10, sticky="ew")
+        self.run_btn.grid(row=0, column=0, padx=10, sticky="ew")
+
+        self.progress_bar = ctk.CTkProgressBar(self.action_frame)
+        self.progress_bar.set(0)
+        self.progress_bar.configure(progress_color=self.accent_color)
+        self.progress_bar.grid(row=1, column=0, padx=10, pady=(15, 5), sticky="ew")
 
         # 8. 로그
         self.log_text = ctk.CTkTextbox(
@@ -760,11 +750,9 @@ class MainWindow(ctk.CTk):
             overwrite = False
 
         self.encoding_in_progress = True
-        self.run_btn.configure(state="disabled", text="⏳ 인코딩 중...")
+        self.run_btn.configure(state="disabled", text="⏳ 인코딩 중... (0%)\n남은 시간: 계산 중...")
         self.select_btn.configure(state="disabled")
         self.edit_output_btn.configure(state="disabled")
-        self.status_label.configure(text="인코딩 중...")
-        self.run_btn.configure(state="disabled", text="⏳ 인코딩 중... (0%)")
         self.progress_bar.set(0)
         
         quality = int(self.quality_slider.get())
@@ -805,12 +793,20 @@ class MainWindow(ctk.CTk):
         except Exception as e:
             self.after(0, self.encoding_error, str(e))
 
-    def on_progress_callback(self, value):
-        self.after(0, lambda: self._update_progress_ui(value))
+    def on_progress_callback(self, data):
+        self.after(0, lambda: self._update_progress_ui(data))
 
-    def _update_progress_ui(self, value):
-        self.progress_bar.set(value / 100)
-        self.run_btn.configure(text=f"⏳ 인코딩 중... ({int(value)}%)")
+    def _update_progress_ui(self, data):
+        if isinstance(data, dict):
+            progress = data.get('progress', 0)
+            remaining = data.get('remaining', "")
+            
+            self.progress_bar.set(progress / 100)
+            self.run_btn.configure(text=f"⏳ 인코딩 중... ({int(progress)}%)\n남은 시간: {remaining}")
+        else:
+            # 하위 호환성 유지
+            self.progress_bar.set(data / 100)
+            self.run_btn.configure(text=f"⏳ 인코딩 중... ({int(data)}%)")
 
     def on_log_callback(self, message):
         self.after(0, lambda: self.log(message))
@@ -837,8 +833,6 @@ class MainWindow(ctk.CTk):
         self.run_btn.configure(state="normal", text="🚀 START")
         self.select_btn.configure(state="normal")
         self.edit_output_btn.configure(state="normal")
-        self.status_label.configure(text="완료")
-        self.progress_label.configure(text="100%")
         self.progress_bar.set(1.0)
 
     def encoding_error(self, message):
@@ -849,7 +843,6 @@ class MainWindow(ctk.CTk):
         self.run_btn.configure(state="normal", text="🚀 START")
         self.select_btn.configure(state="normal")
         self.edit_output_btn.configure(state="normal")
-        self.status_label.configure(text="오류 발생")
 
     def load_settings(self):
         """설정 로드"""
