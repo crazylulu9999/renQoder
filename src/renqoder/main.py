@@ -29,6 +29,40 @@ from encoder import VideoEncoder
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
+class ToolTip:
+    """마우스 오버 시 정보를 보여주는 툴팁 클래스"""
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tooltip_window = None
+        self.widget.bind("<Enter>", self.show_tooltip)
+        self.widget.bind("<Leave>", self.hide_tooltip)
+
+    def show_tooltip(self, event=None):
+        if self.tooltip_window or not self.text:
+            return
+        
+        # 툴팁 위치 계산 (위젯 하단)
+        x = self.widget.winfo_rootx() + 10
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 10
+        
+        self.tooltip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True) # 테두리 제거
+        tw.wm_geometry(f"+{x}+{y}")
+        tw.attributes("-topmost", True) # 항상 위에
+        
+        # 배경색과 폰트 설정
+        label = tk.Label(tw, text=self.text, justify='left',
+                       background="#2b2b2b", foreground="#dddddd",
+                       relief='solid', borderwidth=1,
+                       font=("Malgun Gothic", 9), padx=10, pady=8)
+        label.pack()
+
+    def hide_tooltip(self, event=None):
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+            self.tooltip_window = None
+
 class MainWindow(ctk.CTk):
     """메인 윈도우"""
     
@@ -264,7 +298,32 @@ class MainWindow(ctk.CTk):
         self.quality_frame.grid(row=0, column=0, padx=(10, 5), sticky="nsew")
         self.quality_frame.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(self.quality_frame, text="화질 설정", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
+        # 화질 설정 타이틀 + 툴팁
+        self.quality_title_frame = ctk.CTkFrame(self.quality_frame, fg_color="transparent")
+        self.quality_title_frame.grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
+        
+        ctk.CTkLabel(self.quality_title_frame, text="화질 설정", font=ctk.CTkFont(weight="bold")).pack(side="left")
+        
+        self.help_icon = ctk.CTkLabel(
+            self.quality_title_frame, 
+            text=" ⓘ", 
+            text_color="#888",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            cursor="hand2"
+        )
+        self.help_icon.pack(side="left", padx=2)
+        
+        tooltip_text = (
+            "화질 설정 (CQ/CQP)\n\n"
+            "- 숫자가 낮을수록 고화질(대용량), 높을수록 저화질(저용량)입니다.\n"
+            "- 기술적인 전체 범위는 0~51이며, 본 자동화 툴은 실용적인 범위인 18~30을 제공합니다.\n"
+            "- 18~20: 초고화질 (20 권장, 육안으로 원본과 거의 구분 불가능)\n"
+            "- 23: 균형점 (화질과 용량의 조화)\n"
+            "- 28~30: 저용량 (용량 절감이 최우선인 경우)\n\n"
+            "* CQ(Constant Quality)는 목표 화질을 일정하게 유지하기 위해\n"
+            "  영상의 복잡도에 따라 비트레이트를 자동으로 조절하는 방식입니다."
+        )
+        ToolTip(self.help_icon, tooltip_text)
         
         self.slider_labels_frame = ctk.CTkFrame(self.quality_frame, fg_color="transparent")
         self.slider_labels_frame.grid(row=1, column=0, padx=20, sticky="ew")
@@ -274,14 +333,14 @@ class MainWindow(ctk.CTk):
         self.quality_slider = ctk.CTkSlider(
             self.quality_frame, 
             from_=18, 
-            to=35, 
-            number_of_steps=17,
+            to=30, 
+            number_of_steps=12,
             command=self.on_slider_change
         )
-        self.quality_slider.set(23)
+        self.quality_slider.set(20)
         self.quality_slider.grid(row=2, column=0, padx=20, pady=5, sticky="ew")
         
-        self.quality_value_label = ctk.CTkLabel(self.quality_frame, text="현재 값: 23 (권장)", text_color="#888")
+        self.quality_value_label = ctk.CTkLabel(self.quality_frame, text="현재 값: 20 (권장)", text_color="#888")
         self.quality_value_label.grid(row=3, column=0, pady=(0, 5))
         
         # 오디오 설정
@@ -429,10 +488,18 @@ class MainWindow(ctk.CTk):
 
     def on_slider_change(self, value):
         val = int(value)
-        if val == 23:
-            self.quality_value_label.configure(text=f"현재 값: {val} (권장)")
-        else:
-            self.quality_value_label.configure(text=f"현재 값: {val}")
+        label_map = {
+            18: "(초고화질)",
+            19: "(고화질)",
+            20: "(권장)",
+            23: "(균형점)"
+        }
+        
+        suffix = label_map.get(val, "")
+        if 28 <= val <= 30:
+            suffix = "(저용량)"
+            
+        self.quality_value_label.configure(text=f"현재 값: {val} {suffix}".strip())
         self.update_ui_state()
 
     def on_audio_change(self, _):
