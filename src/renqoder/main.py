@@ -13,6 +13,7 @@ import ctypes
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
+import send2trash
 
 import customtkinter as ctk
 from PIL import Image
@@ -720,7 +721,7 @@ class MainWindow(ctk.CTk):
             return
             
         if Path(self.output_file).exists():
-            if not messagebox.askyesno("파일 중복", f"이미 파일이 존재합니다:\n{Path(self.output_file).name}\n\n덮어쓰시겠습니까?"):
+            if not messagebox.askyesno("파일 중복", f"이미 파일이 존재합니다:\n{Path(self.output_file).name}\n\n파일을 덮어쓰시겠습니까?\n(기존 파일은 휴지통으로 안전하게 이동됩니다)"):
                 self.log("인코딩 취소: 파일이 이미 존재함")
                 return
             else:
@@ -750,6 +751,14 @@ class MainWindow(ctk.CTk):
 
     def encoding_worker(self, quality, audio_mode, overwrite):
         try:
+            # 덮어쓰기인 경우 기존 파일을 휴지통으로 이동
+            if overwrite and Path(self.output_file).exists():
+                try:
+                    send2trash.send2trash(self.output_file)
+                    self.log(f"기존 파일을 휴지통으로 이동했습니다: {Path(self.output_file).name}")
+                except Exception as e:
+                    self.log(f"휴지통 이동 실패 (영구 삭제될 수 있음): {e}")
+
             result = self.encoder.encode(
                 self.input_file,
                 quality,

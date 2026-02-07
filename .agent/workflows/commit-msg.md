@@ -8,13 +8,11 @@ description: staged된 변경 사항을 분석하여 Conventional Commits 스타
 
 // turbo-all
 ## 1. 프로젝트 맥락 및 변경 사항 통합 수집
-에이전트는 윈도우 환경의 `run_command` 호출 시 실시간 결과 캡처의 안정성을 보장하기 위해 반드시 `cmd /c`를 사용하여 모든 정보를 수집합니다.
+에이전트는 윈도우 환경의 `run_command` 호출 시 실시간 결과 캡처의 안정성을 보장하기 위해 `git-collector` 스킬을 사용하여 모든 정보를 한 번에 수집합니다.
 
-### Windows CMD (강제)
+### Git Collector 실행
 ```cmd
-cmd /c git status
-cmd /c git diff --cached --stat
-cmd /c git diff --cached
+python .agent\skills\git-collector\scripts\get_git_context.py
 ```
 
 ## 2. 메시지 생성 가이드라인 (Conventional Commits)
@@ -24,6 +22,7 @@ cmd /c git diff --cached
 - **Scope**: (선택) 모듈명 (예: `ui`, `core`, `agent`)
 - **Subject**: 명확한 요약
 - **Body**: 변경 이유 및 상세 내용 (필요시)
+- **Output Format**: 사용자가 복사하기 쉽도록 반드시 **Markdown 코드 블록** 형식으로 최종 추천 메시지를 제공합니다.
 
 ## 3. 추천 서식
 ```text
