@@ -199,8 +199,6 @@ class VideoEncoder:
         # HEVC 태그 (Apple 호환성)
         cmd.extend(['-tag:v', 'hvc1'])
         
-        # 실시간 진행률 출력을 위한 옵션 (stdout으로 출력됨)
-        cmd.extend(['-progress', 'pipe:1'])
         
         # 출력 파일
         cmd.append(output_file)
@@ -410,78 +408,33 @@ class VideoEncoder:
                     continue
                 
                 clean_line = line.strip()
-                if log_callback:
-                    log_callback(clean_line)
                 
-                # A. 전체 길이(Duration) 찾기 (ffprobe 실패 대비)
-                if "Duration:" in line and self.total_seconds <= 0:
-                    match = re.search(r"Duration:\s*(\d{2}:\d{2}:\d{2}[.,]\d+)", line)
-                    if not match:
-                        match = re.search(r"Duration:\s*(\d{2}:\d{2}:\d{2})", line)
+                # FFmpeg의 기본 진행률 라인 감지 (frame= ... fps= ... q= ... size= ... time= ... bitrate= ... speed= ...)
+                if 'frame=' in clean_line and 'time=' in clean_line:
+                    if log_callback:
+                        log_callback(clean_line)
                     
-                    if match:
-                        found_duration = self.convert_to_seconds(match.group(1).replace(',', '.'))
-                        if found_duration > 0:
-                            self.total_seconds = found_duration
-                            if log_callback:
-                                log_callback(f"영상 길이 감지됨: {self.total_seconds:.2f}초")
-
-                # 진행률 계산 여부 확인용
-                progress_updated = False
-
-                # B. 진행률 감지 (time= 또는 out_time= 방식 우선)
-                time_match = re.search(r"(?:time=|out_time=)(\d{2}:\d{2}:\d{2}[.,]\d+)", line)
-                if not time_match:
-                    time_match = re.search(r"(?:time=|out_time=)(\d{2}:\d{2}:\d{2})", line)
-
-                if time_match:
-                    self.current_seconds = self.convert_to_seconds(time_match.group(1).replace(',', '.'))
-                    if self.total_seconds > 0:
-                        progress = min(100, int((self.current_seconds / self.total_seconds) * 100))
-                        if progress_callback:
-                            progress_callback(progress)
-                        progress_updated = True
+                    # 진행률 바 업데이트를 위한 시간 추출
+                    time_match = re.search(r"time=(\d{2}:\d{2}:\d{2}[.,]\d+)", clean_line)
+                    if time_match:
+                        self.current_seconds = self.convert_to_seconds(time_match.group(1).replace(',', '.'))
+                        if self.total_seconds > 0:
+                            progress = min(100, int((self.current_seconds / self.total_seconds) * 100))
+                            if progress_callback:
+                                progress_callback(progress)
                 
-                # C. 진행률 감지 (frame= 방식 - 폴백)
-                if not progress_updated and 'frame=' in line:
-                    try:
-                        match = re.search(r"frame=\s*(\d+)", line)
+                # 기타 정보성 로그 (Duration, Stream 등)
+                elif "Duration:" in clean_line or "Stream #" in clean_line:
+                    if log_callback:
+                        log_callback(clean_line)
+                    
+                    # 수동 Duration 감지 (폴백)
+                    if "Duration:" in clean_line and self.total_seconds <= 0:
+                        match = re.search(r"Duration:\s*(\d{2}:\d{2}:\d{2}[.,]\d+)", clean_line)
                         if match:
-                            self.current_frame = int(match.group(1))
-                            if self.total_frames > 0:
-                                progress = min(100, int((self.current_frame / self.total_frames) * 100))
-                                if progress_callback:
-                                    progress_callback(progress)
-                    except Exception:
-                        pass
-                
-                # D. 완료 시점 강제 업데이트
-                if 'progress=end' in line:
-                    if progress_callback:
-                        progress_callback(100)
-
-                # D. FFmpeg -progress pipe:1 형식 (key=value) 파싱
-                if '=' in line and not line.startswith('frame='):
-                    try:
-                        key, value = line.split('=', 1)
-                        key = key.strip()
-                        value = value.strip()
-                        
-                        if key == 'out_time' or key == 'time':
-                            self.current_seconds = self.convert_to_seconds(value)
-                            if self.total_seconds > 0:
-                                progress = min(100, int((self.current_seconds / self.total_seconds) * 100))
-                                if progress_callback:
-                                    progress_callback(progress)
-                                progress_updated = True
-                        elif key == 'frame':
-                            self.current_frame = int(value)
-                            if not progress_updated and self.total_frames > 0:
-                                progress = min(100, int((self.current_frame / self.total_frames) * 100))
-                                if progress_callback:
-                                    progress_callback(progress)
-                    except:
-                        pass
+                            found_duration = self.convert_to_seconds(match.group(1).replace(',', '.'))
+                            if found_duration > 0:
+                                self.total_seconds = found_duration
 
                 # 에러 로그 출력 (디버깅용)
                 lower_line = line.lower()

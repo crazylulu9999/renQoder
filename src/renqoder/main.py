@@ -75,7 +75,7 @@ class MainWindow(ctk.CTk):
     def init_ui(self):
         """UI 구성"""
         self.title("renQoder - Smart Video Transcoder")
-        self.geometry("700x850")
+        self.geometry("700x800")
         
         # 아이콘 설정 (.ico 파일 우선 사용)
         ico_rel_path = "resources/icon.ico"
@@ -90,29 +90,78 @@ class MainWindow(ctk.CTk):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # 메인 스크롤 가능한 프레임
-        self.main_frame = ctk.CTkScrollableFrame(self, corner_radius=0, fg_color="transparent")
-        self.main_frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
+        # 메인 프레임 (스크롤바 제거를 위해 일반 프레임으로 변경)
+        self.main_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        self.main_frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=10)
         self.main_frame.grid_columnconfigure(0, weight=1)
+        self.main_frame.grid_rowconfigure(7, weight=1)
 
-        # 1. 헤더 (타이틀 & 슬로건)
+        # 1. 헤더 (로고, 타이틀 & 슬로건)
         self.header_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.header_frame.grid(row=0, column=0, pady=(0, 20), sticky="ew")
+        self.header_frame.grid(row=0, column=0, pady=(0, 15))
+        
+        # 로고 아이콘 추가
+        icon_png_path = self.get_resource_path("resources/icon.png")
+        if icon_png_path.exists():
+            try:
+                img = Image.open(icon_png_path)
+                # 고해상도 이미지를 적절한 크기(64x64)로 변환
+                self.logo_image = ctk.CTkImage(light_image=img, dark_image=img, size=(64, 64))
+                self.logo_label = ctk.CTkLabel(self.header_frame, image=self.logo_image, text="")
+                self.logo_label.pack(side="left", padx=(0, 20))
+            except Exception as e:
+                print(f"헤더 로고 로드 오류: {e}")
+
+        # 텍스트 프레임 (타이틀 & 슬로건)
+        self.header_text_frame = ctk.CTkFrame(self.header_frame, fg_color="transparent")
+        self.header_text_frame.pack(side="left", padx=0)
         
         self.title_label = ctk.CTkLabel(
-            self.header_frame, 
+            self.header_text_frame, 
             text="renQoder", 
-            font=ctk.CTkFont(size=32, weight="bold")
+            font=ctk.CTkFont(size=32, weight="bold"),
+            anchor="w"
         )
-        self.title_label.pack()
+        self.title_label.pack(fill="x")
         
         self.slogan_label = ctk.CTkLabel(
-            self.header_frame, 
+            self.header_text_frame, 
             text="Smart Render, Slim Storage.", 
             text_color="#888888",
-            font=ctk.CTkFont(size=14)
+            font=ctk.CTkFont(size=14),
+            anchor="w"
         )
-        self.slogan_label.pack()
+        self.slogan_label.pack(fill="x")
+
+        # 링크 버튼 프레임 (우측 끝, 2행 배치)
+        self.links_frame = ctk.CTkFrame(self.header_frame, fg_color="transparent")
+        self.links_frame.pack(side="right", padx=(40, 0))
+        
+        # GitHub 링크 버튼
+        self.github_btn = ctk.CTkButton(
+            self.links_frame,
+            text="GitHub",
+            width=70,
+            height=22,
+            font=ctk.CTkFont(size=11),
+            fg_color="#333",
+            hover_color="#444",
+            command=lambda: webbrowser.open("https://github.com/crazylulu9999/renQoder")
+        )
+        self.github_btn.pack(side="top", pady=(0, 5))
+        
+        # FFmpeg 링크 버튼
+        self.ffmpeg_site_btn = ctk.CTkButton(
+            self.links_frame,
+            text="FFmpeg",
+            width=70,
+            height=22,
+            font=ctk.CTkFont(size=11),
+            fg_color="#333",
+            hover_color="#444",
+            command=lambda: webbrowser.open("https://www.ffmpeg.org/")
+        )
+        self.ffmpeg_site_btn.pack(side="top")
 
         # 2. GPU 정보
         encoder_info = self.detector.get_encoder_info()
@@ -122,34 +171,97 @@ class MainWindow(ctk.CTk):
             text_color=self.accent_color,
             font=ctk.CTkFont(weight="bold")
         )
-        self.gpu_info_label.grid(row=1, column=0, pady=(0, 20))
+        self.gpu_info_label.grid(row=2, column=0, pady=(0, 15))
 
-        # 3. 파일 선택 섹션
-        self.file_frame = ctk.CTkFrame(self.main_frame)
-        self.file_frame.grid(row=2, column=0, padx=10, pady=(0, 20), sticky="ew")
+        # 3. 입력 파일 및 출력 파일 섹션
+        self.files_container = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.files_container.grid(row=1, column=0, pady=(0, 15), sticky="ew")
+        self.files_container.grid_columnconfigure(0, weight=1)
+
+        # 입력 파일
+        self.file_frame = ctk.CTkFrame(self.files_container)
+        self.file_frame.grid(row=0, column=0, padx=10, pady=(0, 5), sticky="ew")
         self.file_frame.grid_columnconfigure(0, weight=1)
         
         self.file_label = ctk.CTkLabel(
             self.file_frame, 
             text="파일을 선택하세요", 
-            height=60,
+            height=40,
             fg_color="#2B2B2B",
             corner_radius=6
         )
-        self.file_label.grid(row=0, column=0, padx=(15, 10), pady=15, sticky="ew")
+        self.file_label.grid(row=0, column=0, padx=(15, 10), pady=10, sticky="ew")
         
         self.select_btn = ctk.CTkButton(
             self.file_frame, 
             text="파일 선택", 
-            width=100,
-            height=40,
+            width=80,
+            height=32,
             command=self.select_file
         )
-        self.select_btn.grid(row=0, column=1, padx=(0, 15), pady=15)
+        self.select_btn.grid(row=0, column=1, padx=(0, 5), pady=10)
 
-        # 4. 화질 설정 (슬라이더)
-        self.quality_frame = ctk.CTkFrame(self.main_frame)
-        self.quality_frame.grid(row=3, column=0, padx=10, pady=(0, 20), sticky="ew")
+        self.input_folder_btn = ctk.CTkButton(
+            self.file_frame,
+            text="📂",
+            width=40,
+            height=32,
+            fg_color="#444",
+            hover_color="#555",
+            state="disabled",
+            command=lambda: self.open_folder(self.input_file)
+        )
+        self.input_folder_btn.grid(row=0, column=2, padx=(0, 15), pady=10)
+
+        # 출력 파일명
+        self.output_frame = ctk.CTkFrame(self.files_container)
+        self.output_frame.grid(row=1, column=0, padx=10, sticky="ew")
+        self.output_frame.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(self.output_frame, text="출력 파일명", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
+        
+        self.output_entry_frame = ctk.CTkFrame(self.output_frame, fg_color="transparent")
+        self.output_entry_frame.grid(row=1, column=0, padx=20, pady=(0, 5), sticky="ew")
+        self.output_entry_frame.grid_columnconfigure(0, weight=1)
+        
+        self.output_filename_entry = ctk.CTkEntry(
+            self.output_entry_frame, 
+            placeholder_text="파일을 선택하면 자동으로 생성됩니다",
+            state="readonly"
+        )
+        self.output_filename_entry.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+        
+        self.edit_output_btn = ctk.CTkButton(
+            self.output_entry_frame, 
+            text="✏️ 수정", 
+            width=60,
+            state="disabled",
+            command=self.edit_output_filename
+        )
+        self.edit_output_btn.grid(row=0, column=1, padx=(0, 5))
+
+        self.output_folder_btn = ctk.CTkButton(
+            self.output_entry_frame,
+            text="📂",
+            width=40,
+            fg_color="#444",
+            hover_color="#555",
+            state="disabled",
+            command=lambda: self.open_folder(self.output_file)
+        )
+        self.output_folder_btn.grid(row=0, column=2)
+        
+        self.drive_space_label = ctk.CTkLabel(self.output_frame, text="", font=ctk.CTkFont(size=11), text_color="#888")
+        self.drive_space_label.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="w")
+
+        # 4. 설정 섹션 (화질 & 오디오 가로 배치)
+        self.settings_container = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.settings_container.grid(row=3, column=0, pady=(0, 15), sticky="ew")
+        self.settings_container.grid_columnconfigure((0, 1), weight=1)
+
+        # 화질 설정
+        self.quality_frame = ctk.CTkFrame(self.settings_container)
+        self.quality_frame.grid(row=0, column=0, padx=(10, 5), sticky="nsew")
         self.quality_frame.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(self.quality_frame, text="화질 설정", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
@@ -172,19 +284,9 @@ class MainWindow(ctk.CTk):
         self.quality_value_label = ctk.CTkLabel(self.quality_frame, text="현재 값: 23 (권장)", text_color="#888")
         self.quality_value_label.grid(row=3, column=0, pady=(0, 5))
         
-        self.quality_desc = ctk.CTkLabel(
-            self.quality_frame,
-            text="💡 CQ 값이 낮을수록 고화질/대용량, 높을수록 저화질/저용량\n"
-                 "18-20: 초고화질 (거의 무손실) | 23: 균형 (권장) | 28-30: 저용량",
-            font=ctk.CTkFont(size=11),
-            text_color="#666666",
-            justify="left"
-        )
-        self.quality_desc.grid(row=4, column=0, padx=20, pady=(0, 15))
-
-        # 5. 오디오 설정
-        self.audio_frame = ctk.CTkFrame(self.main_frame)
-        self.audio_frame.grid(row=4, column=0, padx=10, pady=(0, 20), sticky="ew")
+        # 오디오 설정
+        self.audio_frame = ctk.CTkFrame(self.settings_container)
+        self.audio_frame.grid(row=0, column=1, padx=(5, 10), sticky="nsew")
         self.audio_frame.grid_columnconfigure(0, weight=1)
         
         ctk.CTkLabel(self.audio_frame, text="오디오 설정", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
@@ -194,45 +296,26 @@ class MainWindow(ctk.CTk):
             values=["원본 유지 (Copy) - 빠름, MKV 권장", "AAC 변환 (192kbps) - 호환성 우선"],
             command=self.on_audio_change
         )
-        self.audio_option.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="ew")
+        self.audio_option.grid(row=1, column=0, padx=15, pady=(5, 15), sticky="ew")
         self.audio_mode_map = {
             "원본 유지 (Copy) - 빠름, MKV 권장": "copy",
             "AAC 변환 (192kbps) - 호환성 우선": "aac"
         }
 
-        # 6. 출력 파일명
-        self.output_frame = ctk.CTkFrame(self.main_frame)
-        self.output_frame.grid(row=5, column=0, padx=10, pady=(0, 20), sticky="ew")
-        self.output_frame.grid_columnconfigure(0, weight=1)
-        
-        ctk.CTkLabel(self.output_frame, text="출력 파일명", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
-        
-        self.output_entry_frame = ctk.CTkFrame(self.output_frame, fg_color="transparent")
-        self.output_entry_frame.grid(row=1, column=0, padx=20, pady=(0, 5), sticky="ew")
-        self.output_entry_frame.grid_columnconfigure(0, weight=1)
-        
-        self.output_filename_entry = ctk.CTkEntry(
-            self.output_entry_frame, 
-            placeholder_text="파일을 선택하면 자동으로 생성됩니다",
-            state="readonly"
-        )
-        self.output_filename_entry.grid(row=0, column=0, sticky="ew", padx=(0, 10))
-        
-        self.edit_output_btn = ctk.CTkButton(
-            self.output_entry_frame, 
-            text="✏️ 수정", 
-            width=80,
-            state="disabled",
-            command=self.edit_output_filename
-        )
-        self.edit_output_btn.grid(row=0, column=1)
-        
-        self.drive_space_label = ctk.CTkLabel(self.output_frame, text="", font=ctk.CTkFont(size=11), text_color="#888")
-        self.drive_space_label.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="w")
+        self.summary_frame = ctk.CTkFrame(self.main_frame)
+        self.summary_frame.grid(row=4, column=0, padx=10, pady=(0, 15), sticky="ew")
+        self.summary_frame.grid_columnconfigure(0, weight=1)
 
-        # 7. FFmpeg 미리보기
+        self.estimated_size_label = ctk.CTkLabel(
+            self.summary_frame, 
+            text="파일을 선택하면 예상 용량이 표시됩니다", 
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color="#AAAAAA"
+        )
+        self.estimated_size_label.pack(pady=15)
+
         self.ffmpeg_frame = ctk.CTkFrame(self.main_frame)
-        self.ffmpeg_frame.grid(row=6, column=0, padx=10, pady=(0, 20), sticky="ew")
+        self.ffmpeg_frame.grid(row=5, column=0, padx=10, pady=(0, 15), sticky="ew")
         self.ffmpeg_frame.grid_columnconfigure(0, weight=1)
         
         self.ffmpeg_header = ctk.CTkFrame(self.ffmpeg_frame, fg_color="transparent")
@@ -264,11 +347,10 @@ class MainWindow(ctk.CTk):
         self.ffmpeg_preview.insert("1.0", "파일을 선택하면 실행될 FFmpeg 명령어가 표시됩니다")
         self.ffmpeg_preview.configure(state="disabled")
 
-        # 8. 진행률 및 시작 버튼
         self.action_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.action_frame.grid(row=7, column=0, pady=(0, 20), sticky="ew")
+        self.action_frame.grid(row=6, column=0, pady=(0, 15), sticky="ew")
         self.action_frame.grid_columnconfigure(0, weight=1)
-        
+
         # 진행률 정보 (상태 + 퍼센트)
         self.progress_info_frame = ctk.CTkFrame(self.action_frame, fg_color="transparent")
         self.progress_info_frame.grid(row=0, column=0, padx=10, sticky="ew")
@@ -283,16 +365,7 @@ class MainWindow(ctk.CTk):
         self.progress_bar.set(0)
         self.progress_bar.configure(progress_color=self.accent_color)
         self.progress_bar.grid(row=1, column=0, padx=10, pady=(5, 5), sticky="ew")
-        
-        # 예상 용량 표시 레이블
-        self.estimated_size_label = ctk.CTkLabel(
-            self.action_frame, 
-            text="", 
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="#AAAAAA"
-        )
-        self.estimated_size_label.grid(row=2, column=0, pady=(0, 15))
-        
+
         self.run_btn = ctk.CTkButton(
             self.action_frame, 
             text="🚀 START", 
@@ -304,20 +377,39 @@ class MainWindow(ctk.CTk):
             state="disabled",
             command=self.start_encoding
         )
-        self.run_btn.grid(row=3, column=0, padx=10, sticky="ew")
+        self.run_btn.grid(row=2, column=0, padx=10, sticky="ew")
 
-        # 9. 로그
+        # 8. 로그
         self.log_text = ctk.CTkTextbox(
             self.main_frame, 
-            height=120, 
+            height=100, 
             font=ctk.CTkFont(family="Consolas", size=12),
             text_color="#00FF00",
             fg_color="#1A1A1A"
         )
-        self.log_text.grid(row=8, column=0, padx=10, pady=(0, 20), sticky="ew")
+        self.log_text.grid(row=7, column=0, padx=10, pady=(0, 10), sticky="nsew")
 
-        # 종료 시 이벤트 바인딩
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def open_folder(self, file_path):
+        """파일이 위치한 폴더를 시스템 탐색기로 엽니다"""
+        if not file_path:
+            return
+            
+        folder_path = str(Path(file_path).parent)
+        if not os.path.exists(folder_path):
+            return
+
+        try:
+            if sys.platform == "win32":
+                os.startfile(folder_path)
+            else:
+                # macOS/Linux 호환성
+                import subprocess
+                opener = "open" if sys.platform == "darwin" else "xdg-open"
+                subprocess.Popen([opener, folder_path])
+        except Exception as e:
+            self.log(f"폴더 열기 실패: {e}")
 
     def adjust_color_brightness(self, hex_color, factor):
         """색상 밝기 조정"""
@@ -390,6 +482,8 @@ class MainWindow(ctk.CTk):
             self.run_btn.configure(state="normal")
             self.edit_output_btn.configure(state="normal")
             self.copy_btn.configure(state="normal")
+            self.input_folder_btn.configure(state="normal")
+            self.output_folder_btn.configure(state="normal")
 
     def update_drive_space_label(self):
         if not self.output_file:
