@@ -106,9 +106,9 @@ renQoder/
    - 18-20: 초고화질 | 23: 균형 (권장) | 28-30: 저용량
 3. **오디오 모드**: 원본 유지(Copy) 또는 AAC 변환 선택
 4. **출력 파일명**: 자동 생성된 파일명 확인 (필요시 "수정" 버튼으로 변경 가능)
-   - 기본 형식: `원본파일명_코덱_CQ품질_오디오정보.확장자`
-   - 예시 (원본 유지): `gameplay_NVENC_CQ23_AAC.mkv` (원본 오디오가 AAC)
-   - 예시 (원본 유지): `gameplay_NVENC_CQ23_AC3.mkv` (원본 오디오가 AC3)
+   - 기본 형식: `원본파일명_코덱_CQ품질_오디오정보.mp4`
+   - 예시 (원본 유지): `gameplay_NVENC_CQ23_AAC.mp4` (원본 오디오가 AAC)
+   - 예시 (원본 유지): `gameplay_NVENC_CQ23_AC3.mp4` (원본 오디오가 AC3)
    - 예시 (AAC 변환): `gameplay_NVENC_CQ23_AAC192k.mp4` (AAC 192kbps 변환)
 5. **FFmpeg 명령어 확인**: 실행될 명령어를 미리보기 창에서 확인
 6. **START**: 변환 시작!
@@ -124,6 +124,7 @@ renQoder/
 
 - [x] v0.1: Initial PoC Release
 - [x] v0.2: Feature enhancement & UI improvement
+- [x] v0.3: Mandatory MP4 encoding enforcement
 - [ ] v0.5: 배치 처리, 드래그 앤 드롭
 - [ ] v1.0: 예상 용량 계산, 설정 저장, macOS 지원
 - [ ] v1.5: Linux 지원, 크로스 플랫폼 빌드

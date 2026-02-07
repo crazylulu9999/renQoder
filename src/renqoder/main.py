@@ -688,12 +688,16 @@ class MainWindow(ctk.CTk):
             initialdir=Path(self.output_file).parent,
             title="출력 파일명 지정",
             filetypes=(
-                ("Video Files", "*.mkv *.mp4 *.mov *.avi *.ts *.m2ts *.wmv *.flv *.webm *.vob *.3gp *.m4v"),
+                ("MP4 Files", "*.mp4"),
                 ("All Files", "*.*")
             )
         )
         
         if new_output:
+            # 확장자가 .mp4가 아니면 강제로 추가
+            if not new_output.lower().endswith(".mp4"):
+                new_output += ".mp4"
+                
             self.output_file = new_output
             self.auto_naming = False
             self.update_ui_state()

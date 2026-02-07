@@ -2,12 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
 
 ## [0.3.0] - 2026-02-07
 
 ### Added
+- 인코딩 시 출력 컨테이너를 항상 `.mp4`로 강제하도록 수정 (호환성 향상)
 - ✅ **입력 파일 필터 목록 대폭 확장**: `.ts`, `.m2ts`, `.wmv`, `.flv`, `.webm`, `.vob`, `.3gp`, `.m4v` 등 다양한 비디오 포맷 지원 ✨
 - ✅ 파일 선택창 가독성 개선 (필터 목록 멀티라인 처리) ✨
 

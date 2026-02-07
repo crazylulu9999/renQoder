@@ -236,8 +236,8 @@ class VideoEncoder:
             original_audio_info = self.get_audio_info(input_file)
             audio_suffix = original_audio_info
         
-        # 파일명 생성: 원본명_코덱_CQ품질_오디오.확장자
-        output_filename = f"{input_path.stem}_{codec_short}_CQ{quality}_{audio_suffix}{input_path.suffix}"
+        # 파일명 생성: 원본명_코덱_CQ품질_오디오.mp4
+        output_filename = f"{input_path.stem}_{codec_short}_CQ{quality}_{audio_suffix}.mp4"
         output_file = str(input_path.parent / output_filename)
         
         return output_file
