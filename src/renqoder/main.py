@@ -87,6 +87,7 @@ class MainWindow(ctk.CTk):
         # 변수
         self.input_file = None
         self.output_file = None
+        self.estimated_size_bytes = 0
         self.encoding_in_progress = False
         
         # 설정 파일 경로
@@ -286,8 +287,7 @@ class MainWindow(ctk.CTk):
         )
         self.output_folder_btn.grid(row=0, column=2)
         
-        self.drive_space_label = ctk.CTkLabel(self.output_frame, text="", font=ctk.CTkFont(size=11), text_color="#888")
-        self.drive_space_label.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="w")
+        self.output_folder_btn.grid(row=0, column=2)
 
         # 4. 설정 섹션 (화질 & 오디오 가로 배치)
         self.settings_container = ctk.CTkFrame(self.main_frame, fg_color="transparent")
@@ -409,7 +409,10 @@ class MainWindow(ctk.CTk):
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color="#AAAAAA"
         )
-        self.estimated_size_label.pack(pady=15)
+        self.estimated_size_label.pack(pady=(15, 5))
+        
+        self.drive_space_label = ctk.CTkLabel(self.summary_frame, text="", font=ctk.CTkFont(size=12), text_color="#888")
+        self.drive_space_label.pack(pady=(0, 15))
 
         self.ffmpeg_frame = ctk.CTkFrame(self.main_frame)
         self.ffmpeg_frame.grid(row=5, column=0, padx=10, pady=(0, 15), sticky="ew")
@@ -455,8 +458,9 @@ class MainWindow(ctk.CTk):
         self.status_label = ctk.CTkLabel(self.progress_info_frame, text="대기 중", font=ctk.CTkFont(size=12))
         self.status_label.pack(side="left")
         
+        # 퍼센트 라벨은 버튼으로 합쳐짐 (기능 유지를 위해 숨김 처리)
         self.progress_label = ctk.CTkLabel(self.progress_info_frame, text="0%", font=ctk.CTkFont(size=12, weight="bold"))
-        self.progress_label.pack(side="right")
+        # self.progress_label.pack(side="right") 
         
         self.progress_bar = ctk.CTkProgressBar(self.action_frame)
         self.progress_bar.set(0)
@@ -601,15 +605,29 @@ class MainWindow(ctk.CTk):
             free_gb = free / (1024 ** 3)
             total_gb = total / (1024 ** 3)
             
-            if free_gb < 10:
-                color = "#FF4444"
-                warning = " ⚠️ 공간 부족"
-            elif free_gb < 50:
-                color = "#FFAA00"
-                warning = ""
+            # 용량 경고 로직 개선 (예상 용량 기준)
+            if self.estimated_size_bytes > 0:
+                # 예상 용량의 N% 기준
+                if free < self.estimated_size_bytes * 1.25:
+                    color = "#FF4444"
+                    warning = " ⚠️ 공간 부족"
+                elif free < self.estimated_size_bytes * 2.0:
+                    color = "#FFAA00"
+                    warning = " ⚠️ 공간 여유 적음"
+                else:
+                    color = "#888888"
+                    warning = ""
             else:
-                color = "#888888"
-                warning = ""
+                # 폴백: 절대량 기준 (10GB/50GB)
+                if free_gb < 10:
+                    color = "#FF4444"
+                    warning = " ⚠️ 공간 부족"
+                elif free_gb < 50:
+                    color = "#FFAA00"
+                    warning = ""
+                else:
+                    color = "#888888"
+                    warning = ""
                 
             self.drive_space_label.configure(
                 text=f"💾 {drive} 드라이브: {free_gb:.1f}GB / {total_gb:.1f}GB 사용 가능{warning}",
@@ -628,6 +646,7 @@ class MainWindow(ctk.CTk):
             
             est_data = self.encoder.estimate_output_size(video_info, quality, audio_mode)
             est_size = est_data['total']
+            self.estimated_size_bytes = est_size
             
             if est_size > 0:
                 est_gb = est_size / (1024 ** 3)
@@ -745,7 +764,7 @@ class MainWindow(ctk.CTk):
         self.select_btn.configure(state="disabled")
         self.edit_output_btn.configure(state="disabled")
         self.status_label.configure(text="인코딩 중...")
-        self.progress_label.configure(text="0%")
+        self.run_btn.configure(state="disabled", text="⏳ 인코딩 중... (0%)")
         self.progress_bar.set(0)
         
         quality = int(self.quality_slider.get())
@@ -791,13 +810,14 @@ class MainWindow(ctk.CTk):
 
     def _update_progress_ui(self, value):
         self.progress_bar.set(value / 100)
-        self.progress_label.configure(text=f"{int(value)}%")
+        self.run_btn.configure(text=f"⏳ 인코딩 중... ({int(value)}%)")
 
     def on_log_callback(self, message):
         self.after(0, lambda: self.log(message))
 
     def encoding_finished(self, output_file):
         self.encoding_in_progress = False
+        self.run_btn.configure(state="normal", text="🚀 START")
         self.log(f"✓ 인코딩 완료: {Path(output_file).name}")
         
         input_size = Path(self.input_file).stat().st_size / (1024**3)
@@ -821,10 +841,10 @@ class MainWindow(ctk.CTk):
         self.progress_label.configure(text="100%")
         self.progress_bar.set(1.0)
 
-    def encoding_error(self, error_msg):
+    def encoding_error(self, message):
         self.encoding_in_progress = False
-        self.log(f"✗ 오류: {error_msg}")
-        messagebox.showerror("오류", f"인코딩 중 오류가 발생했습니다:\n{error_msg}")
+        self.log(f"✗ 오류 발생: {message}")
+        messagebox.showerror("오류", f"인코딩 중 오류가 발생했습니다:\n{message}")
         
         self.run_btn.configure(state="normal", text="🚀 START")
         self.select_btn.configure(state="normal")
