@@ -282,7 +282,16 @@ class MainWindow(ctk.CTk):
         self.progress_bar = ctk.CTkProgressBar(self.action_frame)
         self.progress_bar.set(0)
         self.progress_bar.configure(progress_color=self.accent_color)
-        self.progress_bar.grid(row=1, column=0, padx=10, pady=(5, 20), sticky="ew")
+        self.progress_bar.grid(row=1, column=0, padx=10, pady=(5, 5), sticky="ew")
+        
+        # 예상 용량 표시 레이블
+        self.estimated_size_label = ctk.CTkLabel(
+            self.action_frame, 
+            text="", 
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#AAAAAA"
+        )
+        self.estimated_size_label.grid(row=2, column=0, pady=(0, 15))
         
         self.run_btn = ctk.CTkButton(
             self.action_frame, 
@@ -295,7 +304,7 @@ class MainWindow(ctk.CTk):
             state="disabled",
             command=self.start_encoding
         )
-        self.run_btn.grid(row=2, column=0, padx=10, sticky="ew")
+        self.run_btn.grid(row=3, column=0, padx=10, sticky="ew")
 
         # 9. 로그
         self.log_text = ctk.CTkTextbox(
@@ -373,6 +382,9 @@ class MainWindow(ctk.CTk):
         # 드라이브 용량
         self.update_drive_space_label()
         
+        # 예상 용량 계산 및 표시
+        self.update_estimated_size(quality, audio_mode)
+        
         # 버튼 활성화
         if not self.encoding_in_progress:
             self.run_btn.configure(state="normal")
@@ -406,6 +418,39 @@ class MainWindow(ctk.CTk):
             )
         except:
             self.drive_space_label.configure(text="")
+            
+    def update_estimated_size(self, quality, audio_mode):
+        if not self.input_file:
+            return
+            
+        try:
+            video_info = self.encoder.get_video_info(self.input_file)
+            orig_size = video_info.get('size', 0)
+            
+            est_data = self.encoder.estimate_output_size(video_info, quality, audio_mode)
+            est_size = est_data['total']
+            
+            if est_size > 0:
+                est_gb = est_size / (1024 ** 3)
+                reduction = ((orig_size - est_size) / orig_size * 100) if orig_size > 0 else 0
+                
+                reduction_text = f" (약 {reduction:.1f}% 절감 예상)" if reduction > 0 else ""
+                self.estimated_size_label.configure(
+                    text=f"📊 예상 결과 용량: {est_gb:.2f} GB{reduction_text}",
+                    text_color=self.accent_color
+                )
+                
+                # 로그에 상세 정보 추가
+                v_mb = est_data['video'] / (1024 * 1024)
+                a_mb = est_data['audio'] / (1024 * 1024)
+                t_mb = est_size / (1024 * 1024)
+                codec_name = self.encoder.encoder_type.upper()
+                self.log(f"예상 용량 ({codec_name}, CQ{quality}): 총 {t_mb:.1f}MB (비디오 {v_mb:.1f}MB, 오디오 {a_mb:.1f}MB)")
+            else:
+                self.estimated_size_label.configure(text="")
+        except Exception as e:
+            print(f"예상 용량 계산 오류: {e}")
+            self.estimated_size_label.configure(text="")
 
     def select_file(self):
         file_path = filedialog.askopenfilename(

@@ -79,7 +79,10 @@ class VideoEncoder:
             'fps': 0,
             'width': 0,
             'height': 0,
-            'codec': 'unknown'
+            'codec': 'unknown',
+            'size': 0,
+            'bit_rate': 0,
+            'audio_size': 0
         }
         
         try:
@@ -90,7 +93,6 @@ class VideoEncoder:
                 '-print_format', 'json',
                 '-show_format',
                 '-show_streams',
-                '-select_streams', 'v:0',
                 input_file
             ]
             
@@ -105,25 +107,47 @@ class VideoEncoder:
                 format_data = data.get('format', {})
                 if 'duration' in format_data:
                     info['duration'] = float(format_data['duration'])
-                
-                # Stream 섹션에서 비디오 스트림 정보 확인
+                if 'size' in format_data:
+                    info['size'] = int(format_data['size'])
+                if 'bit_rate' in format_data:
+                    info['bit_rate'] = int(format_data['bit_rate'])
+
+                # Stream 섹션에서 스트림 정보 확인
                 streams = data.get('streams', [])
-                if streams:
-                    v_stream = streams[0]
-                    info['codec'] = v_stream.get('codec_name', 'unknown')
-                    info['width'] = int(v_stream.get('width', 0))
-                    info['height'] = int(v_stream.get('height', 0))
+                total_audio_size = 0
+                
+                for stream in streams:
+                    codec_type = stream.get('codec_type')
                     
-                    # nb_frames 확인
-                    if v_stream.get('nb_frames'):
-                        info['frames'] = int(v_stream['nb_frames'])
+                    if codec_type == 'video' and info['codec'] == 'unknown':
+                        info['codec'] = stream.get('codec_name', 'unknown')
+                        info['width'] = int(stream.get('width', 0))
+                        info['height'] = int(stream.get('height', 0))
+                        
+                        # nb_frames 확인
+                        if stream.get('nb_frames'):
+                            info['frames'] = int(stream['nb_frames'])
+                        
+                        # FPS 확인 (r_frame_rate "30/1" 형식 대응)
+                        fps_raw = stream.get('r_frame_rate', '0/0')
+                        if '/' in fps_raw:
+                            num, den = fps_raw.split('/')
+                            if float(den) > 0:
+                                info['fps'] = float(num) / float(den)
                     
-                    # FPS 확인 (r_frame_rate "30/1" 형식 대응)
-                    fps_raw = v_stream.get('r_frame_rate', '0/0')
-                    if '/' in fps_raw:
-                        num, den = fps_raw.split('/')
-                        if float(den) > 0:
-                            info['fps'] = float(num) / float(den)
+                    elif codec_type == 'audio':
+                        # 실제 스트림 사이즈 정보가 있는 경우 사용
+                        s_size = int(stream.get('size', 0))
+                        if s_size <= 0:
+                            # 사이즈 정보가 없으면 비트레이트와 길이로 계산
+                            s_bitrate = int(stream.get('bit_rate', 0))
+                            s_duration = float(stream.get('duration', info['duration']))
+                            if s_bitrate > 0 and s_duration > 0:
+                                s_size = int((s_bitrate * s_duration) / 8)
+                        
+                        total_audio_size += s_size
+                
+                info['audio_size'] = total_audio_size
                 
                 # 보정: nb_frames가 없거나 0인 경우 (duration * fps)
                 if info['frames'] <= 0 and info['duration'] > 0 and info['fps'] > 0:
@@ -219,6 +243,66 @@ class VideoEncoder:
         output_file = str(input_path.parent / output_filename)
         
         return output_file
+
+    def estimate_output_size(self, video_info, quality, audio_mode):
+        """
+        인코딩 후 예상되는 파일 크기를 계산합니다. (Heuristic model)
+        
+        Args:
+            video_info: get_video_info에서 반환된 딕셔너리
+            quality: CQ 설정값 (18-35)
+            audio_mode: 'copy' 또는 'aac'
+            
+        Returns:
+            예상 파일 크기 (bytes)
+        """
+        duration = video_info.get('duration', 0)
+        if duration <= 0:
+            return 0
+            
+        width = video_info.get('width', 1920)
+        height = video_info.get('height', 1080)
+        fps = video_info.get('fps', 30)
+        
+        # 1. 비디오 비트레이트 추정 (HEVC/H.265 기준)
+        # 기본 픽셀 당 비트 모델: bpp (bits per pixel)
+        # CQ 23, 1080p, 30fps 기준 대략 2Mbps-4Mbps 타겟
+        # CQ에 따른 지수적 변화 반영: CQ가 6 증가할 때마다 비트레이트 대략 절반
+        
+        base_bpp = 0.12  # CQ 23 기준의 기준 bpp (현실적인 실사 영상 기준)
+        cq_offset = quality - 23
+        # 지수적 감쇄: 2^(-cq_offset/7) (보정된 감쇄율)
+        estimated_bpp = base_bpp * (0.5 ** (cq_offset / 7.0))
+        
+        # 해상도 및 FPS 반영
+        pixel_count = width * height * fps
+        v_bitrate = pixel_count * estimated_bpp
+        
+        if audio_mode == 'aac':
+            a_bitrate = 192000  # 192kbps
+            a_size = (a_bitrate * duration) / 8
+        else:
+            # 원본 오디오 사이즈를 그대로 사용 (Copy 모드)
+            a_size = video_info.get('audio_size', 0)
+            
+            # 만약 audio_size가 감지되지 않았다면 폴백
+            if a_size <= 0:
+                total_orig_bitrate = video_info.get('bit_rate', 0)
+                if total_orig_bitrate > 0:
+                    a_bitrate = total_orig_bitrate * 0.1 # 대략 10% 가정
+                    a_size = (a_bitrate * duration) / 8
+                else:
+                    a_size = (128000 * duration) / 8
+        
+        # 3. 전체 크기 계산
+        v_size = (v_bitrate * duration) / 8
+        estimated_size = v_size + a_size
+        
+        return {
+            'total': int(estimated_size),
+            'video': int(v_size),
+            'audio': int(a_size)
+        }
     
     def get_command_preview(self, input_file, output_file, quality=23, audio_mode="copy", overwrite=False):
         """
