@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-02-07
+
+### Added
+- ✅ **입력 파일 필터 목록 대폭 확장**: `.ts`, `.m2ts`, `.wmv`, `.flv`, `.webm`, `.vob`, `.3gp`, `.m4v` 등 다양한 비디오 포맷 지원 ✨
+- ✅ 파일 선택창 가독성 개선 (필터 목록 멀티라인 처리) ✨
+
+### Fixed
+- ✅ 특정 환경에서 파일 선택 시 `.ts` 파일이 보이지 않던 문제 해결
+
 ## [0.2.0] - 2026-02-07
 
 ### Added
@@ -76,5 +85,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
+- **v0.3.0** (2026-02-07): 입력 파일 필터 확장 및 소소한 개선
 - **v0.2.0** (2026-02-07): 안전한 덮러쓰기(휴지통), UI/UX 개선 및 버그 수정
 - **v0.1.0** (2026-02-07): Initial PoC Release - 핵심 인코딩 엔진 및 GUI 기반 마련

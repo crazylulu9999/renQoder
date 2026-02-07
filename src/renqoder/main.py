@@ -655,7 +655,10 @@ class MainWindow(ctk.CTk):
         file_path = filedialog.askopenfilename(
             initialdir=self.last_directory,
             title="비디오 파일 선택",
-            filetypes=(("Video Files", "*.mkv *.mp4 *.mov *.avi"), ("All Files", "*.*"))
+            filetypes=(
+                ("Video Files", "*.mkv *.mp4 *.mov *.avi *.ts *.m2ts *.wmv *.flv *.webm *.vob *.3gp *.m4v"),
+                ("All Files", "*.*")
+            )
         )
         
         if file_path:
@@ -684,7 +687,10 @@ class MainWindow(ctk.CTk):
             initialfile=Path(self.output_file).name,
             initialdir=Path(self.output_file).parent,
             title="출력 파일명 지정",
-            filetypes=(("Video Files", "*.mkv *.mp4 *.mov *.avi"), ("All Files", "*.*"))
+            filetypes=(
+                ("Video Files", "*.mkv *.mp4 *.mov *.avi *.ts *.m2ts *.wmv *.flv *.webm *.vob *.3gp *.m4v"),
+                ("All Files", "*.*")
+            )
         )
         
         if new_output:
