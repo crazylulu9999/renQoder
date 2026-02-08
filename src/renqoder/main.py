@@ -1,6 +1,6 @@
 """
 renQoder - Smart Video Transcoder
-PoC 버전
+0.3.0 버전
 """
 
 import sys
@@ -29,6 +29,8 @@ from hardware_detector import HardwareDetector, check_ffmpeg
 from encoder import VideoEncoder
 from taskbar import TaskbarController
 from notification import show_toast
+from __init__ import __version__
+from searcher import VideoSearcher
 
 # 테마 설정
 ctk.set_appearance_mode("Dark")
@@ -88,12 +90,21 @@ class MainWindow(ctk.CTk):
         self.encoder = VideoEncoder(encoder_info['encoder'])
         self.accent_color = self.detector.get_accent_color()
         
+        # 검색기 초기화
+        self.searcher = VideoSearcher()
+        
         # 변수
         self.input_file = None
         self.output_file = None
         self.estimated_size_bytes = 0
         self.encoding_in_progress = False
         self.taskbar = None
+        
+        # 검색 관련 상태
+        self.all_search_results = []
+        self.metadata_thread_running = False
+        self.sort_column = None
+        self.sort_descending = False
         
         # 설정 파일 경로
         self.config_file = Path.home() / '.renqoder_config.json'
@@ -119,7 +130,7 @@ class MainWindow(ctk.CTk):
 
     def init_ui(self):
         """UI 구성"""
-        self.title("renQoder - Smart Video Transcoder")
+        self.title(f"renQoder v{__version__} - Smart Video Transcoder")
         self.geometry("700x800")
         
         # 아이콘 설정 (.ico 파일 우선 사용)
@@ -133,17 +144,11 @@ class MainWindow(ctk.CTk):
                 print(f"✗ 아이콘 로드 오류: {e}")
         
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)  # Changed to row 1 for tabview
 
-        # 메인 프레임 (스크롤바 제거를 위해 일반 프레임으로 변경)
-        self.main_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
-        self.main_frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=10)
-        self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(7, weight=1)
-
-        # 1. 헤더 (로고, 타이틀 & 슬로건)
-        self.header_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.header_frame.grid(row=0, column=0, pady=(0, 15))
+        # 공통 헤더 (로고, 타이틀 & 슬로건)
+        self.header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(10, 0))
         
         # 로고 아이콘 추가
         icon_png_path = self.get_resource_path("resources/icon.png")
@@ -207,33 +212,71 @@ class MainWindow(ctk.CTk):
             command=lambda: webbrowser.open("https://www.ffmpeg.org/")
         )
         self.ffmpeg_site_btn.pack(side="top", pady=(0, 5))
+        
+        # Everything 링크 버튼
+        self.everything_btn = ctk.CTkButton(
+            self.links_frame,
+            text="Everything",
+            width=100,
+            height=22,
+            font=ctk.CTkFont(size=11),
+            fg_color="#333",
+            hover_color="#444",
+            command=lambda: webbrowser.open("https://www.voidtools.com/")
+        )
+        self.everything_btn.pack(side="top")
 
-        # 알림 테스트 버튼
-        if IS_DEV:
-            self.test_notify_btn = ctk.CTkButton(
-                self.links_frame,
-                text="🔔 알림 테스트",
-                width=100,
-                height=22,
-                font=ctk.CTkFont(size=11),
-                fg_color="#333",
-                hover_color="#444",
-                command=self.test_notification
-            )
-            self.test_notify_btn.pack(side="top")
+        # 탭뷰 생성 (탭 버튼 크기 증가)
+        self.tabview = ctk.CTkTabview(
+            self, 
+            corner_radius=0,
+            width=660,  # 전체 너비 설정
+            segmented_button_fg_color="#1A1A1A",
+            segmented_button_selected_color=self.accent_color,
+            segmented_button_unselected_color="#2B2B2B"
+        )
+        self.tabview.grid(row=1, column=0, sticky="nsew", padx=20, pady=(10, 10))
+        
+        # 탭 추가
+        self.tabview.add("Encoding")
+        self.tabview.add("Search")
+        
+        # 탭 버튼 크기 및 스타일 설정
+        try:
+            # 세그먼트 버튼 전체 높이 증가
+            self.tabview._segmented_button.configure(height=40, font=ctk.CTkFont(size=14, weight="bold"))
+            
+            # 각 개별 버튼이 동일한 너비를 차지하도록 설정
+            for button in self.tabview._segmented_button._buttons_dict.values():
+                button.configure(width=300)  # 각 버튼에 충분한 너비 설정
+        except Exception as e:
+            print(f"탭 버튼 설정 오류: {e}")
+        
+        # Encoding 탭 초기화
+        self.init_encoding_tab()
+        
+        # Search 탭 초기화
+        self.init_search_tab()
 
-        # 2. GPU 정보
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def init_encoding_tab(self):
+        """인코딩 탭 UI 구성"""
+        encoding_tab = self.tabview.tab("Encoding")
+        encoding_tab.grid_columnconfigure(0, weight=1)
+
+        # GPU 정보
         encoder_info = self.detector.get_encoder_info()
         self.gpu_info_label = ctk.CTkLabel(
-            self.main_frame,
+            encoding_tab,
             text=f"🎮 감지된 GPU: {encoder_info['vendor']} ({encoder_info['name']})",
             text_color=self.accent_color,
             font=ctk.CTkFont(weight="bold")
         )
-        self.gpu_info_label.grid(row=2, column=0, pady=(0, 15))
+        self.gpu_info_label.grid(row=0, column=0, pady=(10, 15))
 
         # 3. 입력 파일 및 출력 파일 섹션
-        self.files_container = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.files_container = ctk.CTkFrame(encoding_tab, fg_color="transparent")
         self.files_container.grid(row=1, column=0, pady=(0, 15), sticky="ew")
         self.files_container.grid_columnconfigure(0, weight=1)
 
@@ -309,11 +352,9 @@ class MainWindow(ctk.CTk):
             command=lambda: self.open_folder(self.output_file)
         )
         self.output_folder_btn.grid(row=0, column=2)
-        
-        self.output_folder_btn.grid(row=0, column=2)
 
         # 4. 설정 섹션 (화질 & 오디오 가로 배치)
-        self.settings_container = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.settings_container = ctk.CTkFrame(encoding_tab, fg_color="transparent")
         self.settings_container.grid(row=3, column=0, pady=(0, 15), sticky="ew")
         self.settings_container.grid_columnconfigure((0, 1), weight=1)
 
@@ -422,7 +463,7 @@ class MainWindow(ctk.CTk):
             "AAC 변환 (192kbps) - 호환성 우선": "aac"
         }
 
-        self.summary_frame = ctk.CTkFrame(self.main_frame)
+        self.summary_frame = ctk.CTkFrame(encoding_tab)
         self.summary_frame.grid(row=4, column=0, padx=10, pady=(0, 15), sticky="ew")
         self.summary_frame.grid_columnconfigure(0, weight=1)
 
@@ -437,7 +478,7 @@ class MainWindow(ctk.CTk):
         self.drive_space_label = ctk.CTkLabel(self.summary_frame, text="", font=ctk.CTkFont(size=12), text_color="#888")
         self.drive_space_label.pack(pady=(0, 15))
 
-        self.ffmpeg_frame = ctk.CTkFrame(self.main_frame)
+        self.ffmpeg_frame = ctk.CTkFrame(encoding_tab)
         self.ffmpeg_frame.grid(row=5, column=0, padx=10, pady=(0, 15), sticky="ew")
         self.ffmpeg_frame.grid_columnconfigure(0, weight=1)
         
@@ -471,7 +512,7 @@ class MainWindow(ctk.CTk):
         self.ffmpeg_preview.configure(state="disabled")
 
         # 7. 실행 섹션
-        self.action_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.action_frame = ctk.CTkFrame(encoding_tab, fg_color="transparent")
         self.action_frame.grid(row=6, column=0, pady=(0, 15), sticky="ew")
         self.action_frame.grid_columnconfigure(0, weight=1)
 
@@ -495,15 +536,861 @@ class MainWindow(ctk.CTk):
 
         # 8. 로그
         self.log_text = ctk.CTkTextbox(
-            self.main_frame, 
+            encoding_tab, 
             height=100, 
             font=ctk.CTkFont(family="Consolas", size=12),
             text_color="#00FF00",
             fg_color="#1A1A1A"
         )
         self.log_text.grid(row=7, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        encoding_tab.grid_rowconfigure(7, weight=1)  # Log area expands
 
-        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+    def init_search_tab(self):
+        """검색 탭 UI 구성"""
+        search_tab = self.tabview.tab("Search")
+        search_tab.grid_columnconfigure(0, weight=1)
+        search_tab.grid_rowconfigure(4, weight=1)  # Results area expands
+
+        # Everything 감지 정보
+        everything_status = self.searcher.get_everything_status()
+        self.everything_info_label = ctk.CTkLabel(
+            search_tab,
+            text=everything_status['status_text'],
+            text_color=everything_status['color'],
+            font=ctk.CTkFont(weight="bold")
+        )
+        self.everything_info_label.grid(row=0, column=0, pady=(10, 5))
+
+        # Everything 다운로드 버튼 (미설치 시에만 표시)
+        if not everything_status['installed']:
+            self.everything_download_btn = ctk.CTkButton(
+                search_tab,
+                text="Everything 다운로드",
+                width=150,
+                height=28,
+                font=ctk.CTkFont(size=12),
+                fg_color="#0071c5",
+                hover_color="#005a9e",
+                command=lambda: webbrowser.open("https://www.voidtools.com/")
+            )
+            self.everything_download_btn.grid(row=1, column=0, pady=(0, 15))
+
+        # 검색 컨트롤 프레임
+        search_control_frame = ctk.CTkFrame(search_tab)
+        search_control_frame.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="ew")
+        search_control_frame.grid_columnconfigure(1, weight=1)
+
+        # 드라이브 카드 컨테이너 (Canvas + Scrollbar)
+        import tkinter as tk
+        canvas_container = ctk.CTkFrame(search_control_frame, fg_color="transparent")
+        canvas_container.grid(row=0, column=0, columnspan=3, padx=20, pady=(15, 15), sticky="ew")
+        
+        # Canvas for horizontal scrolling
+        drive_canvas = tk.Canvas(canvas_container, bg="#1A1A1A", height=90, highlightthickness=0)
+        drive_canvas.pack(side="top", fill="x")
+        
+        # Horizontal scrollbar
+        h_scrollbar = ctk.CTkScrollbar(canvas_container, orientation="horizontal", command=drive_canvas.xview)
+        h_scrollbar.pack(side="bottom", fill="x", pady=(2, 0))
+        drive_canvas.configure(xscrollcommand=h_scrollbar.set)
+        
+        # Frame inside canvas
+        drive_container = ctk.CTkFrame(drive_canvas, fg_color="transparent")
+        canvas_window = drive_canvas.create_window((0, 0), window=drive_container, anchor="nw")
+        
+        # 마우스 휠로 가로 스크롤
+        def on_mousewheel(event):
+            # Windows: event.delta, Linux: event.num
+            if event.delta:
+                drive_canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
+            elif event.num == 4:
+                drive_canvas.xview_scroll(-1, "units")
+            elif event.num == 5:
+                drive_canvas.xview_scroll(1, "units")
+        
+        # 마우스 휠 이벤트 바인딩 (Windows/Mac)
+        drive_canvas.bind("<MouseWheel>", on_mousewheel)
+        # Linux 지원
+        drive_canvas.bind("<Button-4>", on_mousewheel)
+        drive_canvas.bind("<Button-5>", on_mousewheel)
+        
+        # Shift + 마우스 휠로도 가로 스크롤 가능
+        def on_shift_mousewheel(event):
+            if event.delta:
+                drive_canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
+        
+        drive_canvas.bind("<Shift-MouseWheel>", on_shift_mousewheel)
+        
+        # 드라이브 정보 가져오기
+        drives_info = self.searcher.get_drives_with_info()
+        self.selected_drive = ctk.StringVar(value=drives_info[0]['letter'] if drives_info else "C:\\")
+        self.drive_cards = {}
+        
+        # 드라이브 카드 생성 (고정 너비, 가로로 나열)
+        for idx, drive_info in enumerate(drives_info):
+            # 드라이브 카드 프레임 (고정 너비)
+            card = ctk.CTkFrame(
+                drive_container,
+                fg_color="#2B2B2B",
+                border_width=2,
+                border_color="#3B3B3B",
+                corner_radius=6,
+                width=200,
+                height=70
+            )
+            card.grid(row=0, column=idx, padx=3, pady=3, sticky="w")
+            card.grid_propagate(False)  # 고정 크기 유지
+            
+            # 드라이브 타입별 아이콘
+            icon_map = {
+                'local': '💾',
+                'removable': '🔌',
+                'network': '🌐',
+                'cdrom': '💿',
+                'ramdisk': '⚡'
+            }
+            icon = icon_map.get(drive_info['type'], '💾')
+            
+            # 아이콘 + 드라이브 레터
+            header_frame = ctk.CTkFrame(card, fg_color="transparent")
+            header_frame.pack(fill="x", padx=8, pady=(8, 3))
+            
+            header_label = ctk.CTkLabel(
+                header_frame,
+                text=f"{icon} {drive_info['label']} ({drive_info['letter'][0]}:)",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                anchor="w"
+            )
+            header_label.pack(side="left", fill="x", expand=True)
+            
+            # 용량 정보
+            total_gb = drive_info['total'] / (1024**3)
+            free_gb = drive_info['free'] / (1024**3)
+            used_gb = drive_info['used'] / (1024**3)
+            usage_percent = (drive_info['used'] / drive_info['total'] * 100) if drive_info['total'] > 0 else 0
+            
+            capacity_text = f"{free_gb:.0f}GB / {total_gb:.0f}GB 사용 가능"
+            capacity_label = ctk.CTkLabel(
+                card,
+                text=capacity_text,
+                font=ctk.CTkFont(size=10),
+                text_color="#AAAAAA",
+                anchor="w"
+            )
+            capacity_label.pack(fill="x", padx=8, pady=(0, 3))
+            
+            # 용량 바
+            progress_bar = ctk.CTkProgressBar(
+                card,
+                height=6,
+                progress_color="#E74856" if usage_percent > 90 else "#FFA500" if usage_percent > 75 else self.accent_color
+            )
+            progress_bar.pack(fill="x", padx=8, pady=(0, 8))
+            progress_bar.set(usage_percent / 100)
+            
+            # 드래그 데이터 저장
+            drag_info = {"start_x": 0, "dragging": False, "drive_letter": drive_info['letter']}
+            
+            def on_card_press(event, info=drag_info):
+                info["start_x"] = event.x_root
+                info["dragging"] = False
+            
+            def on_card_drag(event, info=drag_info):
+                # 5픽셀 이상 움직이면 드래그로 간주
+                if abs(event.x_root - info["start_x"]) > 5:
+                    info["dragging"] = True
+                    # Canvas 스크롤
+                    delta = event.x_root - info["start_x"]
+                    current_x = drive_canvas.xview()[0]
+                    canvas_width = drive_canvas.winfo_width()
+                    scroll_region_width = drive_canvas.bbox("all")[2] if drive_canvas.bbox("all") else canvas_width
+                    
+                    # 스크롤 비율 계산
+                    scroll_amount = -delta / scroll_region_width
+                    drive_canvas.xview_moveto(max(0, min(1, current_x + scroll_amount)))
+                    info["start_x"] = event.x_root
+            
+            def on_card_release(event, info=drag_info):
+                # 드래그하지 않았으면 클릭으로 처리
+                if not info["dragging"]:
+                    self.select_drive_card(info["drive_letter"])
+            
+            # 모든 위젯에 드래그 이벤트 바인딩
+            for widget in [card, header_frame, header_label, capacity_label, progress_bar]:
+                widget.bind("<ButtonPress-1>", on_card_press)
+                widget.bind("<B1-Motion>", on_card_drag)
+                widget.bind("<ButtonRelease-1>", on_card_release)
+            
+            self.drive_cards[drive_info['letter']] = card
+        
+        # Canvas 스크롤 영역 업데이트
+        drive_container.update_idletasks()
+        drive_canvas.configure(scrollregion=drive_canvas.bbox("all"))
+        
+        # 첫 번째 드라이브 선택
+        if drives_info:
+            self.select_drive_card(drives_info[0]['letter'])
+
+
+        # 검색 버튼 (드라이브 카드 아래에 배치)
+        self.search_btn = ctk.CTkButton(
+            search_control_frame,
+            text="🔍 검색 시작",
+            width=200,
+            height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=self.accent_color,
+            hover_color=self.adjust_color_brightness(self.accent_color, 1.2),
+            command=self.start_search
+        )
+        self.search_btn.grid(row=2, column=0, columnspan=3, padx=20, pady=(0, 15))
+
+        # 필터 프레임
+        filter_frame = ctk.CTkFrame(search_tab)
+        filter_frame.grid(row=3, column=0, padx=10, pady=(0, 5), sticky="ew")
+
+        ctk.CTkLabel(filter_frame, text="필터", font=ctk.CTkFont(weight="bold", size=13)).grid(row=0, column=0, columnspan=8, padx=20, pady=(15, 10), sticky="w")
+
+        # 컨테이너 필터
+        ctk.CTkLabel(filter_frame, text="컨테이너:").grid(row=1, column=0, padx=(20, 5), pady=(0, 15), sticky="w")
+        self.container_var = ctk.StringVar(value="전체")
+        self.container_combo = ctk.CTkComboBox(
+            filter_frame,
+            variable=self.container_var,
+            values=["전체", "mp4", "mkv", "avi", "ts", "m2ts", "mov", "wmv", "flv", "webm"],
+            width=100
+        )
+        self.container_combo.grid(row=1, column=1, padx=(0, 15), pady=(0, 15), sticky="w")
+
+        # 최소 크기 필터
+        ctk.CTkLabel(filter_frame, text="최소 크기:").grid(row=1, column=2, padx=(0, 5), pady=(0, 15), sticky="w")
+        self.min_size_var = ctk.StringVar(value="1MB")
+        self.min_size_combo = ctk.CTkComboBox(
+            filter_frame,
+            variable=self.min_size_var,
+            values=["제한 없음", "1MB", "100MB", "500MB", "1GB", "5GB", "10GB"],
+            width=100,
+            command=lambda _: self.apply_filters()
+        )
+        self.min_size_combo.grid(row=1, column=3, padx=(0, 15), pady=(0, 15), sticky="w")
+
+        # 코덱 필터
+        ctk.CTkLabel(filter_frame, text="코덱:").grid(row=1, column=4, padx=(0, 5), pady=(0, 15), sticky="w")
+        self.search_codec_var = ctk.StringVar(value="전체")
+        self.search_codec_combo = ctk.CTkComboBox(
+            filter_frame,
+            variable=self.search_codec_var,
+            values=["전체", "h264", "hevc", "vp9", "av1", "h263", "mpeg4"],
+            width=100,
+            command=lambda _: self.apply_filters()
+        )
+        self.search_codec_combo.grid(row=1, column=5, padx=(0, 15), pady=(0, 15), sticky="w")
+
+        # 비트레이트 필터
+        ctk.CTkLabel(filter_frame, text="최소 비트레이트:").grid(row=1, column=6, padx=(0, 5), pady=(0, 15), sticky="w")
+        self.min_bitrate_var = ctk.StringVar(value="제한 없음")
+        self.min_bitrate_combo = ctk.CTkComboBox(
+            filter_frame,
+            variable=self.min_bitrate_var,
+            values=["제한 없음", "1 Mbps", "5 Mbps", "10 Mbps", "20 Mbps", "50 Mbps"],
+            width=100,
+            command=lambda _: self.apply_filters()
+        )
+        self.min_bitrate_combo.grid(row=1, column=7, padx=(0, 20), pady=(0, 15), sticky="w")
+
+        # 결과 프레임
+        results_frame = ctk.CTkFrame(search_tab)
+        results_frame.grid(row=4, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        results_frame.grid_columnconfigure(0, weight=1)
+        results_frame.grid_rowconfigure(0, weight=1)
+
+        # Treeview 스타일 설정을 위한 프레임
+        tree_container = ctk.CTkFrame(results_frame, fg_color="#2B2B2B")
+        tree_container.grid(row=0, column=0, padx=20, pady=(10, 10), sticky="nsew")
+        tree_container.grid_columnconfigure(0, weight=1)
+        tree_container.grid_rowconfigure(0, weight=1)
+
+        # Treeview 생성
+        import tkinter.ttk as ttk
+        
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure("Treeview",
+                       background="#2B2B2B",
+                       foreground="white",
+                       fieldbackground="#2B2B2B",
+                       borderwidth=0)
+        style.configure("Treeview.Heading",
+                       background="#1A1A1A",
+                       foreground="white",
+                       borderwidth=1)
+        style.map('Treeview', background=[('selected', self.accent_color)])
+        style.map('Treeview.Heading',
+                 background=[('active', self.accent_color)],
+                 foreground=[('active', 'black')])
+
+        # 스크롤바
+        tree_scroll = ctk.CTkScrollbar(tree_container)
+        tree_scroll.grid(row=0, column=1, sticky="ns")
+
+        self.results_tree = ttk.Treeview(
+            tree_container,
+            columns=("name", "codec", "res", "fps", "size", "bitrate", "length", "ext", "path"),
+            show="headings",
+            yscrollcommand=tree_scroll.set,
+            selectmode="browse"
+        )
+        self.results_tree.tag_configure("loading", foreground="#666666")
+        tree_scroll.configure(command=self.results_tree.yview)
+
+        # 컬럼 설정
+        self.column_headings = {
+            "name": "파일명",
+            "codec": "코덱",
+            "res": "해상도",
+            "fps": "FPS",
+            "size": "크기",
+            "bitrate": "비트레이트",
+            "length": "길이",
+            "ext": "확장자",
+            "path": "경로"
+        }
+        
+        widths = {
+            "name": 200,
+            "codec": 80,
+            "res": 100,
+            "fps": 60,
+            "size": 100,
+            "bitrate": 100,
+            "length": 80,
+            "ext": 70,
+            "path": 300
+        }
+
+        for col, head in self.column_headings.items():
+            self.results_tree.heading(col, text=head, command=lambda _c=col: self.on_column_click(_c))
+            self.results_tree.column(col, width=widths[col], minwidth=50)
+
+        self.results_tree.grid(row=0, column=0, sticky="nsew")
+
+        # 우클릭 메뉴 정의
+        self.results_context_menu = tk.Menu(self, tearoff=0, bg="#2B2B2B", fg="white", activebackground="#0071c5")
+        self.results_context_menu.add_command(label="➡️ 인코딩 탭으로 보내기", command=self.send_to_encoder)
+        self.results_context_menu.add_separator()
+        self.results_context_menu.add_command(label="📂 폴더 열기", command=lambda: self.context_menu_action("open_folder"))
+        self.results_context_menu.add_command(label="🔗 파일 경로 복사", command=lambda: self.context_menu_action("copy_path"))
+        self.results_context_menu.add_command(label="📄 파일 이름 복사", command=lambda: self.context_menu_action("copy_name"))
+        self.results_context_menu.add_separator()
+        self.results_context_menu.add_command(label="🔄 재분석", command=lambda: self.context_menu_action("clear_cache"))
+        self.results_context_menu.add_command(label="❌ 파일 삭제 (휴지통)", command=lambda: self.context_menu_action("delete"))
+
+        self.results_tree.bind("<Button-3>", self.show_context_menu)
+        self.results_tree.bind("<Home>", self.on_home_key)
+        self.results_tree.bind("<End>", self.on_end_key)
+
+        # 메타데이터 진행바 및 상태 라벨
+        self.metadata_progress = ctk.CTkProgressBar(
+            results_frame, 
+            height=6, 
+            fg_color="#333333",
+            progress_color="#0071c5"
+        )
+        self.metadata_progress.grid(row=3, column=0, padx=20, pady=(0, 5), sticky="ew")
+        self.metadata_progress.set(0)
+
+        self.metadata_status_label = ctk.CTkLabel(
+            results_frame, 
+            text="", 
+            font=ctk.CTkFont(size=11),
+            text_color="#888888"
+        )
+        self.metadata_status_label.grid(row=2, column=0, padx=20, pady=(5, 2), sticky="w")
+
+        # 액션 프레임
+        action_frame = ctk.CTkFrame(search_tab, fg_color="transparent")
+        action_frame.grid(row=5, column=0, padx=10, pady=(0, 10), sticky="ew")
+        action_frame.grid_columnconfigure(0, weight=1)
+
+        self.send_to_encoder_btn = ctk.CTkButton(
+            action_frame,
+            text="➡️ 선택한 파일을 인코딩 탭으로 보내기",
+            height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color="#0071c5",
+            hover_color="#005a9e",
+            state="disabled",
+            command=self.send_to_encoder
+        )
+        self.send_to_encoder_btn.grid(row=0, column=0, padx=(10, 5), sticky="ew")
+
+        self.clear_cache_btn = ctk.CTkButton(
+            action_frame,
+            text="🗑️ 캐시 초기화",
+            width=120,
+            height=40,
+            fg_color="#444444",
+            hover_color="#555555",
+            command=self.clear_search_cache
+        )
+        self.clear_cache_btn.grid(row=0, column=1, padx=(5, 10), sticky="e")
+
+        # Treeview 선택 이벤트
+        self.results_tree.bind('<<TreeviewSelect>>', self.on_search_result_select)
+
+    def select_drive_card(self, drive_letter):
+        """드라이브 카드 선택 처리"""
+        self.selected_drive.set(drive_letter)
+        
+        # 모든 카드의 테두리 초기화
+        for card in self.drive_cards.values():
+            card.configure(border_color="#3B3B3B")
+        
+        # 선택된 카드 강조
+        if drive_letter in self.drive_cards:
+            self.drive_cards[drive_letter].configure(border_color=self.accent_color)
+    
+    def start_search(self):
+        """검색 시작"""
+        drive = self.selected_drive.get()
+        min_size_str = self.min_size_var.get()
+
+        # UI 비활성화
+        self.search_btn.configure(state="disabled", text="🔍 검색 중...")
+        self.results_tree.delete(*self.results_tree.get_children())
+        self.metadata_status_label.configure(text="")
+        self.metadata_progress.set(0)
+        
+        # 기존 메타데이터 추출 중단
+        self.metadata_thread_running = False
+
+        # 백그라운드 스레드에서 검색 실행
+        import threading
+        thread = threading.Thread(
+            target=self.search_worker,
+            args=(drive, min_size_str),
+            daemon=True
+        )
+        thread.start()
+
+    def search_worker(self, drive, min_size_str):
+        """검색 작업 스레드"""
+        try:
+            # 1. 파일 검색 (빠름)
+            results = self.searcher.search(drive)
+            self.all_search_results = results
+            
+            # 2. UI 업데이트
+            self.after(0, lambda: self.on_search_complete(results))
+            
+            # 3. 메타데이터 추출 대상 필터링 (최소 크기 조건 적용)
+            size_map = {
+                "1MB": 1024 * 1024,
+                "100MB": 100 * 1024 * 1024,
+                "500MB": 500 * 1024 * 1024,
+                "1GB": 1024 * 1024 * 1024,
+                "5GB": 5 * 1024 * 1024 * 1024,
+                "10GB": 10 * 1024 * 1024 * 1024
+            }
+            # "제한 없음"이라도 최소 1바이트 이상인 파일만 대상으로 함 (0바이트 파일 제외)
+            min_size = max(size_map.get(min_size_str, 0), 1)
+            
+            # 지정된 크기 이상의 파일만 상세 정보 추출 대상으로 선정
+            extraction_targets = [item for item in results if item['size'] >= min_size]
+            
+            # 4. 메타데이터 추출 시작 (느림)
+            self.start_metadata_extraction(extraction_targets)
+            
+        except Exception as e:
+            self.after(0, lambda: self.log(f"검색 오류: {e}"))
+            self.after(0, lambda: self.search_btn.configure(state="normal", text="🔍 검색 시작"))
+
+    def on_search_complete(self, results):
+        """기본 검색 완료 시 호출"""
+        self.search_btn.configure(state="normal", text="🔍 검색 시작")
+        self.apply_filters()
+        self.log(f"검색 완료: {len(results)}개 파일 발견")
+        
+    def start_metadata_extraction(self, results):
+        """메타데이터 추출 스레드 시작"""
+        self.metadata_thread_running = True
+        import threading
+        thread = threading.Thread(
+            target=self.metadata_worker,
+            args=(results,),
+            daemon=True
+        )
+        thread.start()
+
+    def metadata_worker(self, results):
+        """메타데이터 추출 작업 스레드 (2단계 추출 방식)"""
+        total = len(results)
+        
+        # --- Stage 1: 빠른 헤더 분석 (Fast Scan) ---
+        self.after(0, lambda: self.metadata_status_label.configure(text=f"상세 정보 추출 중 (1단계: 빠른 스캔)... (0/{total})"))
+        
+        for i, item in enumerate(results):
+            if not self.metadata_thread_running:
+                return
+            
+            if not item.get('metadata_loaded'):
+                # Stage 1: fast_only=True
+                metadata = self.searcher.extract_metadata(item['path'], fast_only=True)
+                item.update(metadata)
+            
+            # 주기적으로 UI 업데이트 (5개마다 혹은 마지막에)
+            if (i + 1) % 5 == 0 or (i + 1) == total:
+                self.after(0, lambda count=i+1: self.update_metadata_progress(count, total, stage=1))
+        
+        # --- Stage 2: 정밀 스캔 (Deep Scan for damaged files) ---
+        # 재생 시간이 0인 파일들만 골라냄
+        damaged_files = [item for item in results if item.get('metadata_loaded') and item.get('duration', 0) <= 0 and not item.get('invalid')]
+        
+        if damaged_files:
+            total_damaged = len(damaged_files)
+            self.after(0, lambda: self.metadata_status_label.configure(text=f"손상된 파일 정밀 분석 중 (2단계)... (0/{total_damaged})"))
+            
+            for i, item in enumerate(damaged_files):
+                if not self.metadata_thread_running:
+                    return
+                
+                filename = Path(item['path']).name
+                
+                # Progress callback for real-time duration updates
+                def progress_update(current_duration):
+                    h = int(current_duration // 3600)
+                    m = int((current_duration % 3600) // 60)
+                    s = int(current_duration % 60)
+                    time_str = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
+                    self.after(0, lambda: self.metadata_status_label.configure(
+                        text=f"정밀 분석 중 (2단계): {filename} - {time_str} ({i+1}/{total_damaged})"
+                    ))
+                
+                # Stage 2: fast_only=False (ffmpeg 스캔 포함) with progress callback
+                metadata = self.searcher.extract_metadata(item['path'], fast_only=False, progress_callback=progress_update)
+                item.update(metadata)
+                
+                # 매 파일마다 UI 업데이트
+                self.after(0, lambda count=i+1: self.update_metadata_progress(count, total_damaged, stage=2))
+        
+        self.metadata_thread_running = False
+        self.after(0, lambda: self.metadata_status_label.configure(text=f"상세 정보 추출 완료 ({total}개 파일)"))
+        self.after(0, lambda: self.metadata_progress.set(1.0))
+
+    def update_metadata_progress(self, current, total, stage=1):
+        """메타데이터 추출 진행률 업데이트"""
+        progress_val = current / total if total > 0 else 0
+        self.metadata_progress.set(progress_val)
+        
+        if stage == 1:
+            self.metadata_status_label.configure(text=f"상세 정보 추출 중 (1단계: 빠른 스캔)... ({current}/{total})")
+        else:
+            self.metadata_status_label.configure(text=f"손상된 파일 정밀 분석 중 (2단계)... ({current}/{total})")
+            
+        # 현재 필터 상태에 맞춰 테이블 새로고침
+        self.apply_filters()
+
+    def apply_filters(self):
+        """필터 및 정렬 적용하여 Treeview 업데이트"""
+        container = self.container_var.get()
+        min_size_str = self.min_size_var.get()
+        codec_filter = self.search_codec_var.get()
+        min_bitrate_str = self.min_bitrate_var.get()
+
+        # 크기 필터 값 변환
+        size_map = {
+            "1MB": 1024 * 1024,
+            "100MB": 100 * 1024 * 1024,
+            "500MB": 500 * 1024 * 1024,
+            "1GB": 1024 * 1024 * 1024,
+            "5GB": 5 * 1024 * 1024 * 1024,
+            "10GB": 10 * 1024 * 1024 * 1024
+        }
+        # "제한 없음"이라도 최소 1바이트 이상인 파일만 표시 (0바이트 파일 제외)
+        min_size = max(size_map.get(min_size_str, 0), 1)
+
+        # 비트레이트 필터 값 변환 (bps)
+        bitrate_map = {
+            "1 Mbps": 1 * 1000 * 1000,
+            "5 Mbps": 5 * 1000 * 1000,
+            "10 Mbps": 10 * 1000 * 1000,
+            "20 Mbps": 20 * 1000 * 1000,
+            "50 Mbps": 50 * 1000 * 1000
+        }
+        min_bitrate = bitrate_map.get(min_bitrate_str, 0)
+
+        filtered = []
+        for item in self.all_search_results:
+            # 분석 결과 동영상이 아닌 파일은 아예 제외
+            if item.get('invalid'):
+                continue
+                
+            # 컨테이너 필터
+            if container != "전체" and item['extension'].lstrip('.') != container:
+                continue
+            
+            # 크기 필터
+            if item['size'] < min_size:
+                continue
+            
+            # 코덱 필터
+            if codec_filter != "전체" and item.get('metadata_loaded'):
+                if codec_filter.lower() not in item.get('codec', '').lower():
+                    continue
+            
+            # 비트레이트 필터
+            if min_bitrate > 0 and item.get('metadata_loaded'):
+                if item.get('bitrate', 0) < min_bitrate:
+                    continue
+            
+            filtered.append(item)
+
+        # 정렬 적용
+        if self.sort_column:
+            def sort_key(x):
+                if self.sort_column == "res":
+                    # 해상도는 전체 픽셀 수 기준으로 정렬 (캐시된 값 우선 사용)
+                    pixels = x.get('pixels')
+                    if pixels is None:
+                        pixels = x.get('width', 0) * x.get('height', 0)
+                    # 동일 픽셀 수일 경우 해상도 문자열(예: "1920x1080")로 2차 비교
+                    return (pixels, x.get('resolution', ""))
+                if self.sort_column == "length":
+                    # 길이는 초 단위 duration으로 정렬
+                    return x.get('duration', 0.0)
+                val = x.get(self.sort_column)
+                if val is None:
+                    return 0 if self.sort_column in ['size', 'bitrate', 'fps', 'width', 'height', 'duration'] else ""
+                return val
+            
+            filtered.sort(key=sort_key, reverse=self.sort_descending)
+
+        self.update_treeview(filtered)
+
+    def on_column_click(self, col):
+        """Treeview 컬럼 클릭 시 정렬"""
+        if self.sort_column == col:
+            self.sort_descending = not self.sort_descending
+        else:
+            self.sort_column = col
+            self.sort_descending = True  # 새로운 컬럼은 내림차순부터 시작
+        
+        self.update_column_headers()
+        self.apply_filters()
+
+    def update_column_headers(self):
+        """컬럼 헤더에 정렬 표시 업데이트"""
+        for col, base_text in self.column_headings.items():
+            if col == self.sort_column:
+                # 현재 정렬 중인 컬럼에 화살표 추가
+                indicator = " ▼" if self.sort_descending else " ▲"
+                self.results_tree.heading(col, text=base_text + indicator)
+            else:
+                # 다른 컬럼은 기본 텍스트만 표시
+                self.results_tree.heading(col, text=base_text)
+
+    def update_treeview(self, results):
+        """Treeview에 데이터 표시"""
+        # 현재 선택된 아이템 기억
+        selected = self.results_tree.selection()
+        selected_path = None
+        if selected:
+            curr_values = self.results_tree.item(selected[0])['values']
+            if len(curr_values) > 8:
+                selected_path = curr_values[8]
+
+        # 데이터 업데이트
+        self.results_tree.delete(*self.results_tree.get_children())
+        
+        for item in results:
+            size_mb = item['size'] / (1024 * 1024)
+            size_str = f"{size_mb:.1f} MB" if size_mb < 1024 else f"{size_mb/1024:.2f} GB"
+            
+            bitrate = item.get('bitrate', 0)
+            bitrate_kbps = f"{bitrate / 1000:,.0f} kbps" if item.get('metadata_loaded') and bitrate > 0 else "-"
+            
+            values = (
+                item['name'],
+                item.get('codec', '-').upper(),
+                item.get('resolution', '-'),
+                item.get('fps', '-'),
+                size_str,
+                bitrate_kbps,
+                item.get('duration_str', '-') if item.get('metadata_loaded') else '-',
+                item['extension'].upper(),
+                item['path']
+            )
+            
+            # 하이라이트 태그 설정 (1단계 미완료이거나, 2단계 분석 대기 중인 경우)
+            is_loading = not item.get('metadata_loaded')
+            if not is_loading and self.metadata_thread_running:
+                # 1단계는 완료되었으나 재생 시간이 '0'이고 분석이 진행 중이면 2단계 대기 상태로 간주
+                if item.get('duration', 0) <= 0 and not item.get('invalid'):
+                    is_loading = True
+            
+            tags = ("loading",) if is_loading else ()
+            node = self.results_tree.insert("", "end", values=values, tags=tags)
+            
+            # 선택 상태 복원
+            if selected_path and item['path'] == selected_path:
+                self.results_tree.selection_set(node)
+                self.results_tree.see(node)
+
+    def update_search_results(self, results):
+        """이전 방식 호환성 유지용"""
+        pass
+
+    def show_context_menu(self, event):
+        """우클릭 시 메뉴 표시"""
+        item = self.results_tree.identify_row(event.y)
+        if item:
+            self.results_tree.selection_set(item)
+            self.results_context_menu.post(event.x_root, event.y_root)
+
+    def on_home_key(self, event):
+        """HOME 키: 첫 번째 항목으로 이동"""
+        children = self.results_tree.get_children()
+        if children:
+            first_item = children[0]
+            self.results_tree.selection_set(first_item)
+            self.results_tree.see(first_item)
+            self.results_tree.focus(first_item)
+        return "break"  # 기본 동작 방지
+
+    def on_end_key(self, event):
+        """END 키: 마지막 항목으로 이동"""
+        children = self.results_tree.get_children()
+        if children:
+            last_item = children[-1]
+            self.results_tree.selection_set(last_item)
+            self.results_tree.see(last_item)
+            self.results_tree.focus(last_item)
+        return "break"  # 기본 동작 방지
+
+    def context_menu_action(self, action):
+        """우클릭 메뉴 액션 처리"""
+        selected = self.results_tree.selection()
+        if not selected:
+            return
+            
+        values = self.results_tree.item(selected[0])['values']
+        if len(values) < 9:
+            return
+            
+        filename = values[0]
+        filepath = values[8]
+        
+        if action == "open_folder":
+            self.open_folder(filepath)
+        elif action == "copy_path":
+            self.clipboard_clear()
+            self.clipboard_append(filepath)
+            self.log(f"경로 복사됨: {filepath}")
+        elif action == "copy_name":
+            self.clipboard_clear()
+            self.clipboard_append(filename)
+            self.log(f"파일명 복사됨: {filename}")
+        elif action == "clear_cache":
+            if self.searcher.clear_cache_item(filepath):
+                # 해당 파일의 메타데이터를 초기화
+                target_item = None
+                for item in self.all_search_results:
+                    if item['path'] == filepath:
+                        target_item = item
+                        item['metadata_loaded'] = False
+                        item['duration'] = 0
+                        item.pop('duration_str', None)
+                        item.pop('codec', None)
+                        item.pop('resolution', None)
+                        item.pop('fps', None)
+                        item.pop('bitrate', None)
+                        item.pop('pixels', None)
+                        break
+                
+                if target_item:
+                    self.log(f"재분석 시작: {filename}")
+                    self.apply_filters()  # UI 업데이트 (회색 표시)
+                    
+                    # 백그라운드에서 즉시 재분석 수행
+                    def reanalyze():
+                        # Stage 1: Fast scan
+                        metadata = self.searcher.extract_metadata(filepath, fast_only=True)
+                        target_item.update(metadata)
+                        self.after(0, self.apply_filters)
+                        
+                        # Stage 2: Deep scan if needed
+                        if target_item.get('metadata_loaded') and target_item.get('duration', 0) <= 0 and not target_item.get('invalid'):
+                            def progress_update(current_duration):
+                                h = int(current_duration // 3600)
+                                m = int((current_duration % 3600) // 60)
+                                s = int(current_duration % 60)
+                                time_str = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
+                                self.after(0, lambda: self.metadata_status_label.configure(
+                                    text=f"재분석 중: {filename} - {time_str}"
+                                ))
+                            
+                            metadata = self.searcher.extract_metadata(filepath, fast_only=False, progress_callback=progress_update)
+                            target_item.update(metadata)
+                            self.after(0, lambda: self.metadata_status_label.configure(text=""))
+                            self.after(0, self.apply_filters)
+                            self.after(0, lambda: self.log(f"재분석 완료: {filename}"))
+                    
+                    import threading
+                    threading.Thread(target=reanalyze, daemon=True).start()
+        elif action == "delete":
+            if messagebox.askyesno("파일 삭제", f"정말로 이 파일을 휴지통으로 보내시겠습니까?\n\n{filename}"):
+                try:
+                    import send2trash
+                    send2trash.send2trash(filepath)
+                    self.log(f"파일 삭제됨 (휴지통): {filename}")
+                    # 리스트에서 제거
+                    self.all_search_results = [i for i in self.all_search_results if i['path'] != filepath]
+                    self.apply_filters()
+                except Exception as e:
+                    messagebox.showerror("오류", f"파일 삭제 실패: {e}")
+
+    def on_search_result_select(self, event):
+        """검색 결과 선택 시"""
+        selection = self.results_tree.selection()
+        if selection:
+            self.send_to_encoder_btn.configure(state="normal")
+        else:
+            self.send_to_encoder_btn.configure(state="disabled")
+
+    def send_to_encoder(self):
+        """선택한 파일을 인코딩 탭으로 전송"""
+        selection = self.results_tree.selection()
+        if not selection:
+            return
+        
+        item = self.results_tree.item(selection[0])
+        file_path = item['values'][8]  # path column is index 8 (파일명, 코덱, 해상도, FPS, 크기, 비트레이트, 길이, 확장자, 경로)
+        
+        # 인코딩 탭으로 전환
+        self.tabview.set("Encoding")
+        
+        # 파일 설정
+        self.input_file = file_path
+        self.auto_naming = True
+        
+        file_name = Path(file_path).name
+        self.file_label.configure(text=f"📁 {file_name}")
+        
+        # 비디오 정보
+        video_info = self.encoder.get_video_info(file_path)
+        d = video_info['duration']
+        duration_str = f"{int(d // 60)}분 {int(d % 60)}초" if d > 0 else "알 수 없음"
+        
+        self.log(f"검색 탭에서 파일 선택됨: {file_name}")
+        self.log(f"정보: {video_info['codec'].upper()} | {video_info['width']}x{video_info['height']} | {duration_str} | {video_info['fps']:.2f}fps")
+        
+        self.update_ui_state()
+
+    def clear_search_cache(self):
+        """메타데이터 캐시 초기화"""
+        self.searcher.clear_cache()
+        self.log("메타데이터 캐시가 초기화되었습니다. 다음 검색 시 모든 파일을 새로 분석합니다.")
+        self.metadata_status_label.configure(text="캐시 초기화 완료")
 
     def open_folder(self, file_path):
         """파일이 위치한 폴더를 시스템 탐색기로 엽니다"""

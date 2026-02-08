@@ -10,23 +10,18 @@ renQoder/
 ├── src/                       # 소스 코드
 │   └── renqoder/              # 메인 패키지
 │       ├── __init__.py        # 패키지 초기화
-│       ├── main.py            # GUI 메인 애플리케이션
-│       ├── encoder.py         # 비디오 인코딩 모듈
-│       └── hardware_detector.py  # GPU 감지 모듈
-│
-├── docs/                      # 문서
-│   ├── DESIGN.md              # 제품 기획서
-│   ├── POC_REPORT.md          # PoC 개발 보고서
-│   └── IMPROVEMENT_REPORT.md  # 개선 사항 보고서
-│
-├── tests/                     # 테스트
-│   └── test_filename.py       # 파일명 생성 테스트
+│       ├── main.py            # GUI 메인 애플리케이션 (탭 기반 UI)
+│       ├── encoder.py         # 비디오 인코딩 핵심 로직
+│       ├── searcher.py        # Everything 연동 동영상 검색 모듈 ✨
+│       ├── notification.py    # Windows Toast 알림 모듈
+│       ├── taskbar.py         # 작업표시줄 진행률 표시 모듈 (Windows)
+│       └── hardware_detector.py # GPU 감지 및 가속기 선택 모듈
 │
 ├── scripts/                   # 빌드/유틸리티 스크립트
 │   └── build_exe.py           # Standalone 빌드 스크립트
 │
 ├── dist/                      # 빌드 결과물
-│   └── renQoder.exe           # 실행 파일 (빌드 후 생성)
+│   └── renQoder-v{version}.exe  # 실행 파일 (빌드 후 생성)
 │
 └── build/                     # 빌드 임시 파일 (자동 생성)
 ```
