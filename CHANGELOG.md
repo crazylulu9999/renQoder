@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.0] - 2026-02-07
 
 ### Added
+- ✅ **인코딩 완료 시 OS 알림 표시**: Windows 10/11 Toast 알림으로 인코딩 완료 및 용량 절감 정보를 실시간으로 알림 ✨
+- ✅ **개발 모드 자동 감지**: `sys.frozen` 속성을 활용하여 개발/배포 환경을 자동으로 구분 ✨
+- ✅ **알림 테스트 버튼**: 개발 모드에서만 표시되는 알림 테스트 기능 추가 (배포 버전에서는 숨김) ✨
 - ✅ **인코딩 예상 남은 시간 표시**: FFmpeg의 인코딩 속도(speed)를 분석하여 실시간으로 예상 완료 시간을 계산하여 표시 ✨
 - ✅ **UI 레이아웃 대폭 간소화**: 불필요한 라벨들을 제거하고 진행 상황을 버튼으로 통합 ✨
 - ✅ **멀티라인 진행 상황 표시**: START 버튼 내에 진행 퍼센트와 남은 시간을 두 줄로 표시하여 시인성 향상 ✨
@@ -23,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - ✅ 특정 환경에서 파일 선택 시 `.ts` 파일이 보이지 않던 문제 해결
+- ✅ `win10toast` 라이브러리의 WNDPROC 에러 메시지 처리 개선
+
+### Dependencies
+- `win10toast`: Windows 10/11 Toast 알림 표시를 위한 라이브러리 추가
 
 ## [0.2.0] - 2026-02-07
 

@@ -18,6 +18,8 @@ import send2trash
 import customtkinter as ctk
 from PIL import Image
 
+IS_DEV = not getattr(sys, 'frozen', False)
+
 # 모듈 경로 문제 해결
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
@@ -25,6 +27,8 @@ if current_dir not in sys.path:
 
 from hardware_detector import HardwareDetector, check_ffmpeg
 from encoder import VideoEncoder
+from taskbar import TaskbarController
+from notification import show_toast
 
 # 테마 설정
 ctk.set_appearance_mode("Dark")
@@ -89,12 +93,17 @@ class MainWindow(ctk.CTk):
         self.output_file = None
         self.estimated_size_bytes = 0
         self.encoding_in_progress = False
+        self.taskbar = None
         
         # 설정 파일 경로
         self.config_file = Path.home() / '.renqoder_config.json'
         
         # UI 초기화
         self.init_ui()
+        
+        # 작업표시줄 컨트롤러 초기화 (Windows 전용)
+        if sys.platform == "win32":
+            self.after(500, self.init_taskbar)
         
         # 설정 로드 및 적용
         self.load_settings()
@@ -177,7 +186,7 @@ class MainWindow(ctk.CTk):
         self.github_btn = ctk.CTkButton(
             self.links_frame,
             text="GitHub",
-            width=70,
+            width=100,
             height=22,
             font=ctk.CTkFont(size=11),
             fg_color="#333",
@@ -190,14 +199,28 @@ class MainWindow(ctk.CTk):
         self.ffmpeg_site_btn = ctk.CTkButton(
             self.links_frame,
             text="FFmpeg",
-            width=70,
+            width=100,
             height=22,
             font=ctk.CTkFont(size=11),
             fg_color="#333",
             hover_color="#444",
             command=lambda: webbrowser.open("https://www.ffmpeg.org/")
         )
-        self.ffmpeg_site_btn.pack(side="top")
+        self.ffmpeg_site_btn.pack(side="top", pady=(0, 5))
+
+        # 알림 테스트 버튼
+        if IS_DEV:
+            self.test_notify_btn = ctk.CTkButton(
+                self.links_frame,
+                text="🔔 알림 테스트",
+                width=100,
+                height=22,
+                font=ctk.CTkFont(size=11),
+                fg_color="#333",
+                hover_color="#444",
+                command=self.test_notification
+            )
+            self.test_notify_btn.pack(side="top")
 
         # 2. GPU 정보
         encoder_info = self.detector.get_encoder_info()
@@ -502,6 +525,15 @@ class MainWindow(ctk.CTk):
         except Exception as e:
             self.log(f"폴더 열기 실패: {e}")
 
+    def init_taskbar(self):
+        """Windows 작업표시줄 진행바 연동 초기화"""
+        try:
+            # Tkinter의 winfo_id()는 Windows에서 HWND를 반환함
+            self.taskbar = TaskbarController(self.winfo_id())
+            # self.log("작업표시줄 연동 완료")
+        except Exception as e:
+            print(f"Taskbar initialization error: {e}")
+
     def adjust_color_brightness(self, hex_color, factor):
         """색상 밝기 조정"""
         hex_color = hex_color.lstrip('#')
@@ -803,10 +835,18 @@ class MainWindow(ctk.CTk):
             
             self.progress_bar.set(progress / 100)
             self.run_btn.configure(text=f"⏳ 인코딩 중... ({int(progress)}%)\n남은 시간: {remaining}")
+            
+            # 작업표시줄 연동
+            if self.taskbar:
+                self.taskbar.set_value(progress)
         else:
             # 하위 호환성 유지
             self.progress_bar.set(data / 100)
             self.run_btn.configure(text=f"⏳ 인코딩 중... ({int(data)}%)")
+            
+            # 작업표시줄 연동
+            if self.taskbar:
+                self.taskbar.set_value(data)
 
     def on_log_callback(self, message):
         self.after(0, lambda: self.log(message))
@@ -822,18 +862,36 @@ class MainWindow(ctk.CTk):
         
         self.log(f"원본: {input_size:.2f}GB → 결과: {output_size:.2f}GB (절감: {reduction:.1f}%)")
         
-        messagebox.showinfo(
-            "완료",
-            f"인코딩이 완료되었습니다!\n\n"
-            f"원본: {input_size:.2f}GB\n"
-            f"결과: {output_size:.2f}GB\n"
-            f"절감: {reduction:.1f}%"
+        # OS Toast 알림 (팝업 대신 사용)
+        icon_path = self.get_resource_path("resources/icon.png")
+        show_toast(
+            "renQoder 변환 완료",
+            f"성공적으로 변환되었습니다!\n절감률: {reduction:.1f}% ({output_size:.2f}GB)",
+            icon_path=str(icon_path)
         )
         
         self.run_btn.configure(state="normal", text="🚀 START")
         self.select_btn.configure(state="normal")
         self.edit_output_btn.configure(state="normal")
         self.progress_bar.set(1.0)
+        
+        # 작업표시줄 상태 리셋
+        if self.taskbar:
+            self.taskbar.stop()
+
+    def test_notification(self):
+        """OS 알림 기능 테스트"""
+        # icon_path = self.get_resource_path("resources/icon.png")
+        # 리소스 폴더의 icon.png 경로 찾기
+        # 실행 위치(run.py) 기준 상대 경로 혹은 절대 경로 계산
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(current_dir, "resources", "icon.png")
+        show_toast(
+            "renQoder 알림 테스트",
+            "알림 기능이 정상적으로 작동하고 있습니다!",
+            icon_path
+        )
+        self.log(f"알림 테스트를 실행했습니다. {icon_path}")
 
     def encoding_error(self, message):
         self.encoding_in_progress = False
@@ -843,6 +901,10 @@ class MainWindow(ctk.CTk):
         self.run_btn.configure(state="normal", text="🚀 START")
         self.select_btn.configure(state="normal")
         self.edit_output_btn.configure(state="normal")
+        
+        # 작업표시줄 에러 상태 (빨간색)
+        if self.taskbar:
+            self.taskbar.set_error()
 
     def load_settings(self):
         """설정 로드"""
