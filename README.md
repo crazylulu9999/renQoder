@@ -72,7 +72,7 @@ python scripts\build_exe.py
 python scripts\build_exe.py --clean
 ```
 
-빌드가 완료되면 `dist/renQoder.exe` 파일이 생성됩니다.
+빌드가 완료되면 `dist/renQoder-{version}.exe` 파일이 생성됩니다.
 
 **주의**: 
 - 생성된 `.exe` 파일은 단독으로 실행 가능하지만, **FFmpeg는 별도로 시스템에 설치**되어 있어야 합니다.
@@ -126,7 +126,7 @@ renQoder/
 
 - [x] v0.1: Initial PoC Release
 - [x] v0.2: Feature enhancement & UI improvement
-- [x] v0.3: 남은 시간 표시, UI 레이아웃 최적화 및 입력 필터 확장 ✨
+- [x] v0.3: 남은 시간 표시, UI 레이아웃 최적화, 입력 필터 확장 및 빌드 자동화 ✨
 - [ ] v0.5: 배치 처리, 드래그 앤 드롭
 - [ ] v1.0: 설정 저장, macOS 지원
 - [ ] v1.5: Linux 지원, 크로스 플랫폼 빌드
