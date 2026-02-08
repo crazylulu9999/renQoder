@@ -18,6 +18,8 @@ import send2trash
 import customtkinter as ctk
 from PIL import Image
 
+IS_DEV = not getattr(sys, 'frozen', False)
+
 # 모듈 경로 문제 해결
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
@@ -25,6 +27,8 @@ if current_dir not in sys.path:
 
 from hardware_detector import HardwareDetector, check_ffmpeg
 from encoder import VideoEncoder
+from taskbar import TaskbarController
+from notification import show_toast
 
 # 테마 설정
 ctk.set_appearance_mode("Dark")
@@ -87,13 +91,19 @@ class MainWindow(ctk.CTk):
         # 변수
         self.input_file = None
         self.output_file = None
+        self.estimated_size_bytes = 0
         self.encoding_in_progress = False
+        self.taskbar = None
         
         # 설정 파일 경로
         self.config_file = Path.home() / '.renqoder_config.json'
         
         # UI 초기화
         self.init_ui()
+        
+        # 작업표시줄 컨트롤러 초기화 (Windows 전용)
+        if sys.platform == "win32":
+            self.after(500, self.init_taskbar)
         
         # 설정 로드 및 적용
         self.load_settings()
@@ -176,7 +186,7 @@ class MainWindow(ctk.CTk):
         self.github_btn = ctk.CTkButton(
             self.links_frame,
             text="GitHub",
-            width=70,
+            width=100,
             height=22,
             font=ctk.CTkFont(size=11),
             fg_color="#333",
@@ -189,14 +199,28 @@ class MainWindow(ctk.CTk):
         self.ffmpeg_site_btn = ctk.CTkButton(
             self.links_frame,
             text="FFmpeg",
-            width=70,
+            width=100,
             height=22,
             font=ctk.CTkFont(size=11),
             fg_color="#333",
             hover_color="#444",
             command=lambda: webbrowser.open("https://www.ffmpeg.org/")
         )
-        self.ffmpeg_site_btn.pack(side="top")
+        self.ffmpeg_site_btn.pack(side="top", pady=(0, 5))
+
+        # 알림 테스트 버튼
+        if IS_DEV:
+            self.test_notify_btn = ctk.CTkButton(
+                self.links_frame,
+                text="🔔 알림 테스트",
+                width=100,
+                height=22,
+                font=ctk.CTkFont(size=11),
+                fg_color="#333",
+                hover_color="#444",
+                command=self.test_notification
+            )
+            self.test_notify_btn.pack(side="top")
 
         # 2. GPU 정보
         encoder_info = self.detector.get_encoder_info()
@@ -286,8 +310,7 @@ class MainWindow(ctk.CTk):
         )
         self.output_folder_btn.grid(row=0, column=2)
         
-        self.drive_space_label = ctk.CTkLabel(self.output_frame, text="", font=ctk.CTkFont(size=11), text_color="#888")
-        self.drive_space_label.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="w")
+        self.output_folder_btn.grid(row=0, column=2)
 
         # 4. 설정 섹션 (화질 & 오디오 가로 배치)
         self.settings_container = ctk.CTkFrame(self.main_frame, fg_color="transparent")
@@ -409,7 +432,10 @@ class MainWindow(ctk.CTk):
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color="#AAAAAA"
         )
-        self.estimated_size_label.pack(pady=15)
+        self.estimated_size_label.pack(pady=(15, 5))
+        
+        self.drive_space_label = ctk.CTkLabel(self.summary_frame, text="", font=ctk.CTkFont(size=12), text_color="#888")
+        self.drive_space_label.pack(pady=(0, 15))
 
         self.ffmpeg_frame = ctk.CTkFrame(self.main_frame)
         self.ffmpeg_frame.grid(row=5, column=0, padx=10, pady=(0, 15), sticky="ew")
@@ -444,24 +470,10 @@ class MainWindow(ctk.CTk):
         self.ffmpeg_preview.insert("1.0", "파일을 선택하면 실행될 FFmpeg 명령어가 표시됩니다")
         self.ffmpeg_preview.configure(state="disabled")
 
+        # 7. 실행 섹션
         self.action_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         self.action_frame.grid(row=6, column=0, pady=(0, 15), sticky="ew")
         self.action_frame.grid_columnconfigure(0, weight=1)
-
-        # 진행률 정보 (상태 + 퍼센트)
-        self.progress_info_frame = ctk.CTkFrame(self.action_frame, fg_color="transparent")
-        self.progress_info_frame.grid(row=0, column=0, padx=10, sticky="ew")
-        
-        self.status_label = ctk.CTkLabel(self.progress_info_frame, text="대기 중", font=ctk.CTkFont(size=12))
-        self.status_label.pack(side="left")
-        
-        self.progress_label = ctk.CTkLabel(self.progress_info_frame, text="0%", font=ctk.CTkFont(size=12, weight="bold"))
-        self.progress_label.pack(side="right")
-        
-        self.progress_bar = ctk.CTkProgressBar(self.action_frame)
-        self.progress_bar.set(0)
-        self.progress_bar.configure(progress_color=self.accent_color)
-        self.progress_bar.grid(row=1, column=0, padx=10, pady=(5, 5), sticky="ew")
 
         self.run_btn = ctk.CTkButton(
             self.action_frame, 
@@ -474,7 +486,12 @@ class MainWindow(ctk.CTk):
             state="disabled",
             command=self.start_encoding
         )
-        self.run_btn.grid(row=2, column=0, padx=10, sticky="ew")
+        self.run_btn.grid(row=0, column=0, padx=10, sticky="ew")
+
+        self.progress_bar = ctk.CTkProgressBar(self.action_frame)
+        self.progress_bar.set(0)
+        self.progress_bar.configure(progress_color=self.accent_color)
+        self.progress_bar.grid(row=1, column=0, padx=10, pady=(15, 5), sticky="ew")
 
         # 8. 로그
         self.log_text = ctk.CTkTextbox(
@@ -507,6 +524,15 @@ class MainWindow(ctk.CTk):
                 subprocess.Popen([opener, folder_path])
         except Exception as e:
             self.log(f"폴더 열기 실패: {e}")
+
+    def init_taskbar(self):
+        """Windows 작업표시줄 진행바 연동 초기화"""
+        try:
+            # Tkinter의 winfo_id()는 Windows에서 HWND를 반환함
+            self.taskbar = TaskbarController(self.winfo_id())
+            # self.log("작업표시줄 연동 완료")
+        except Exception as e:
+            print(f"Taskbar initialization error: {e}")
 
     def adjust_color_brightness(self, hex_color, factor):
         """색상 밝기 조정"""
@@ -601,15 +627,29 @@ class MainWindow(ctk.CTk):
             free_gb = free / (1024 ** 3)
             total_gb = total / (1024 ** 3)
             
-            if free_gb < 10:
-                color = "#FF4444"
-                warning = " ⚠️ 공간 부족"
-            elif free_gb < 50:
-                color = "#FFAA00"
-                warning = ""
+            # 용량 경고 로직 개선 (예상 용량 기준)
+            if self.estimated_size_bytes > 0:
+                # 예상 용량의 N% 기준
+                if free < self.estimated_size_bytes * 1.25:
+                    color = "#FF4444"
+                    warning = " ⚠️ 공간 부족"
+                elif free < self.estimated_size_bytes * 2.0:
+                    color = "#FFAA00"
+                    warning = " ⚠️ 공간 여유 적음"
+                else:
+                    color = "#888888"
+                    warning = ""
             else:
-                color = "#888888"
-                warning = ""
+                # 폴백: 절대량 기준 (10GB/50GB)
+                if free_gb < 10:
+                    color = "#FF4444"
+                    warning = " ⚠️ 공간 부족"
+                elif free_gb < 50:
+                    color = "#FFAA00"
+                    warning = ""
+                else:
+                    color = "#888888"
+                    warning = ""
                 
             self.drive_space_label.configure(
                 text=f"💾 {drive} 드라이브: {free_gb:.1f}GB / {total_gb:.1f}GB 사용 가능{warning}",
@@ -628,6 +668,7 @@ class MainWindow(ctk.CTk):
             
             est_data = self.encoder.estimate_output_size(video_info, quality, audio_mode)
             est_size = est_data['total']
+            self.estimated_size_bytes = est_size
             
             if est_size > 0:
                 est_gb = est_size / (1024 ** 3)
@@ -655,7 +696,10 @@ class MainWindow(ctk.CTk):
         file_path = filedialog.askopenfilename(
             initialdir=self.last_directory,
             title="비디오 파일 선택",
-            filetypes=(("Video Files", "*.mkv *.mp4 *.mov *.avi"), ("All Files", "*.*"))
+            filetypes=(
+                ("Video Files", "*.mkv *.mp4 *.mov *.avi *.ts *.m2ts *.wmv *.flv *.webm *.vob *.3gp *.m4v"),
+                ("All Files", "*.*")
+            )
         )
         
         if file_path:
@@ -684,10 +728,17 @@ class MainWindow(ctk.CTk):
             initialfile=Path(self.output_file).name,
             initialdir=Path(self.output_file).parent,
             title="출력 파일명 지정",
-            filetypes=(("Video Files", "*.mkv *.mp4 *.mov *.avi"), ("All Files", "*.*"))
+            filetypes=(
+                ("MP4 Files", "*.mp4"),
+                ("All Files", "*.*")
+            )
         )
         
         if new_output:
+            # 확장자가 .mp4가 아니면 강제로 추가
+            if not new_output.lower().endswith(".mp4"):
+                new_output += ".mp4"
+                
             self.output_file = new_output
             self.auto_naming = False
             self.update_ui_state()
@@ -731,11 +782,9 @@ class MainWindow(ctk.CTk):
             overwrite = False
 
         self.encoding_in_progress = True
-        self.run_btn.configure(state="disabled", text="⏳ 인코딩 중...")
+        self.run_btn.configure(state="disabled", text="⏳ 인코딩 중... (0%)\n남은 시간: 계산 중...")
         self.select_btn.configure(state="disabled")
         self.edit_output_btn.configure(state="disabled")
-        self.status_label.configure(text="인코딩 중...")
-        self.progress_label.configure(text="0%")
         self.progress_bar.set(0)
         
         quality = int(self.quality_slider.get())
@@ -776,18 +825,35 @@ class MainWindow(ctk.CTk):
         except Exception as e:
             self.after(0, self.encoding_error, str(e))
 
-    def on_progress_callback(self, value):
-        self.after(0, lambda: self._update_progress_ui(value))
+    def on_progress_callback(self, data):
+        self.after(0, lambda: self._update_progress_ui(data))
 
-    def _update_progress_ui(self, value):
-        self.progress_bar.set(value / 100)
-        self.progress_label.configure(text=f"{int(value)}%")
+    def _update_progress_ui(self, data):
+        if isinstance(data, dict):
+            progress = data.get('progress', 0)
+            remaining = data.get('remaining', "")
+            
+            self.progress_bar.set(progress / 100)
+            self.run_btn.configure(text=f"⏳ 인코딩 중... ({int(progress)}%)\n남은 시간: {remaining}")
+            
+            # 작업표시줄 연동
+            if self.taskbar:
+                self.taskbar.set_value(progress)
+        else:
+            # 하위 호환성 유지
+            self.progress_bar.set(data / 100)
+            self.run_btn.configure(text=f"⏳ 인코딩 중... ({int(data)}%)")
+            
+            # 작업표시줄 연동
+            if self.taskbar:
+                self.taskbar.set_value(data)
 
     def on_log_callback(self, message):
         self.after(0, lambda: self.log(message))
 
     def encoding_finished(self, output_file):
         self.encoding_in_progress = False
+        self.run_btn.configure(state="normal", text="🚀 START")
         self.log(f"✓ 인코딩 완료: {Path(output_file).name}")
         
         input_size = Path(self.input_file).stat().st_size / (1024**3)
@@ -796,30 +862,49 @@ class MainWindow(ctk.CTk):
         
         self.log(f"원본: {input_size:.2f}GB → 결과: {output_size:.2f}GB (절감: {reduction:.1f}%)")
         
-        messagebox.showinfo(
-            "완료",
-            f"인코딩이 완료되었습니다!\n\n"
-            f"원본: {input_size:.2f}GB\n"
-            f"결과: {output_size:.2f}GB\n"
-            f"절감: {reduction:.1f}%"
+        # OS Toast 알림 (팝업 대신 사용)
+        icon_path = self.get_resource_path("resources/icon.png")
+        show_toast(
+            "renQoder 변환 완료",
+            f"성공적으로 변환되었습니다!\n절감률: {reduction:.1f}% ({output_size:.2f}GB)",
+            icon_path=str(icon_path)
         )
         
         self.run_btn.configure(state="normal", text="🚀 START")
         self.select_btn.configure(state="normal")
         self.edit_output_btn.configure(state="normal")
-        self.status_label.configure(text="완료")
-        self.progress_label.configure(text="100%")
         self.progress_bar.set(1.0)
+        
+        # 작업표시줄 상태 리셋
+        if self.taskbar:
+            self.taskbar.stop()
 
-    def encoding_error(self, error_msg):
+    def test_notification(self):
+        """OS 알림 기능 테스트"""
+        # icon_path = self.get_resource_path("resources/icon.png")
+        # 리소스 폴더의 icon.png 경로 찾기
+        # 실행 위치(run.py) 기준 상대 경로 혹은 절대 경로 계산
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(current_dir, "resources", "icon.png")
+        show_toast(
+            "renQoder 알림 테스트",
+            "알림 기능이 정상적으로 작동하고 있습니다!",
+            icon_path
+        )
+        self.log(f"알림 테스트를 실행했습니다. {icon_path}")
+
+    def encoding_error(self, message):
         self.encoding_in_progress = False
-        self.log(f"✗ 오류: {error_msg}")
-        messagebox.showerror("오류", f"인코딩 중 오류가 발생했습니다:\n{error_msg}")
+        self.log(f"✗ 오류 발생: {message}")
+        messagebox.showerror("오류", f"인코딩 중 오류가 발생했습니다:\n{message}")
         
         self.run_btn.configure(state="normal", text="🚀 START")
         self.select_btn.configure(state="normal")
         self.edit_output_btn.configure(state="normal")
-        self.status_label.configure(text="오류 발생")
+        
+        # 작업표시줄 에러 상태 (빨간색)
+        if self.taskbar:
+            self.taskbar.set_error()
 
     def load_settings(self):
         """설정 로드"""

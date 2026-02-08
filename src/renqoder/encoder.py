@@ -236,8 +236,8 @@ class VideoEncoder:
             original_audio_info = self.get_audio_info(input_file)
             audio_suffix = original_audio_info
         
-        # 파일명 생성: 원본명_코덱_CQ품질_오디오.확장자
-        output_filename = f"{input_path.stem}_{codec_short}_CQ{quality}_{audio_suffix}{input_path.suffix}"
+        # 파일명 생성: 원본명_코덱_CQ품질_오디오.mp4
+        output_filename = f"{input_path.stem}_{codec_short}_CQ{quality}_{audio_suffix}.mp4"
         output_file = str(input_path.parent / output_filename)
         
         return output_file
@@ -416,12 +416,41 @@ class VideoEncoder:
                     
                     # 진행률 바 업데이트를 위한 시간 추출
                     time_match = re.search(r"time=(\d{2}:\d{2}:\d{2}[.,]\d+)", clean_line)
+                    speed_match = re.search(r"speed=\s*([\d.]+)x", clean_line)
+                    
                     if time_match:
                         self.current_seconds = self.convert_to_seconds(time_match.group(1).replace(',', '.'))
                         if self.total_seconds > 0:
                             progress = min(100, int((self.current_seconds / self.total_seconds) * 100))
+                            
+                            # 속도 및 남은 시간 계산
+                            speed_str = "0.00x"
+                            remaining_str = "계산 중..."
+                            
+                            if speed_match:
+                                speed_val = float(speed_match.group(1))
+                                speed_str = f"{speed_val:.2f}x"
+                                
+                                if speed_val > 0:
+                                    remaining_seconds = (self.total_seconds - self.current_seconds) / speed_val
+                                    if remaining_seconds > 0:
+                                        m, s = divmod(int(remaining_seconds), 60)
+                                        h, m = divmod(m, 60)
+                                        if h > 0:
+                                            remaining_str = f"{h:d}:{m:02d}:{s:02d}"
+                                        else:
+                                            remaining_str = f"{m:02d}:{s:02d}"
+                                    else:
+                                        remaining_str = "00:00"
+                            
                             if progress_callback:
-                                progress_callback(progress)
+                                # 하위 호환성을 위해 progress 값과 함께 상세 정보 전달
+                                progress_data = {
+                                    'progress': progress,
+                                    'speed': speed_str,
+                                    'remaining': remaining_str
+                                }
+                                progress_callback(progress_data)
                 
                 # 기타 정보성 로그 (Duration, Stream 등)
                 elif "Duration:" in clean_line or "Stream #" in clean_line:

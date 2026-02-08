@@ -6,7 +6,25 @@ PyInstaller를 사용하여 단일 .exe 파일을 생성합니다.
 import subprocess
 import sys
 import shutil
+import re
 from pathlib import Path
+
+
+def get_version():
+    """__init__.py에서 버전 정보 읽기"""
+    project_root = Path(__file__).parent.parent
+    init_file = project_root / 'src' / 'renqoder' / '__init__.py'
+    
+    try:
+        with open(init_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+            match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
+            if match:
+                return match.group(1)
+    except Exception as e:
+        print(f"⚠ 버전 정보를 읽을 수 없습니다: {e}")
+    
+    return "0.0.0"
 
 
 def check_pyinstaller():
@@ -53,6 +71,12 @@ def build_exe():
     print("renQoder Standalone 빌드 시작")
     print("=" * 60)
     
+    # 버전 정보 가져오기
+    version = get_version()
+    exe_name = f"renQoder-v{version}"
+    print(f"\n버전: {version}")
+    print(f"출력 파일명: {exe_name}.exe")
+    
     # PyInstaller 확인
     if not check_pyinstaller():
         return False
@@ -73,7 +97,7 @@ def build_exe():
     # PyInstaller 명령어 구성
     cmd = [
         sys.executable, '-m', 'PyInstaller',
-        '--name=renQoder',
+        f'--name={exe_name}',
         '--onefile',
         '--windowed',
         f'--icon={str(icon_file)}' if icon_file.exists() else '--icon=NONE',
@@ -96,10 +120,12 @@ def build_exe():
             print("✓ 빌드 성공!")
             print("=" * 60)
             
-            exe_path = project_root / 'dist' / 'renQoder.exe'
+            exe_path = project_root / 'dist' / f'{exe_name}.exe'
             if exe_path.exists():
                 size_mb = exe_path.stat().st_size / (1024 * 1024)
                 print(f"\n실행파일 위치: {exe_path.absolute()}")
+                print(f"파일 이름: {exe_name}.exe")
+                print(f"버전: {version}")
                 print(f"파일 크기: {size_mb:.2f} MB")
                 print("\n주의: FFmpeg는 별도로 시스템에 설치되어 있어야 합니다!")
             
@@ -120,7 +146,6 @@ def clean_build():
     project_root = Path(__file__).parent.parent
     
     dirs_to_remove = ['build', 'dist', '__pycache__', 'src/renqoder/__pycache__']
-    files_to_remove = ['renQoder.spec']
     
     for dir_name in dirs_to_remove:
         dir_path = project_root / dir_name
@@ -128,11 +153,10 @@ def clean_build():
             shutil.rmtree(dir_path)
             print(f"  - 삭제: {dir_name}/")
     
-    for file_name in files_to_remove:
-        file_path = project_root / file_name
-        if file_path.exists():
-            file_path.unlink()
-            print(f"  - 삭제: {file_name}")
+    # .spec 파일 삭제 (버전이 포함된 파일명 패턴)
+    for spec_file in project_root.glob('renQoder*.spec'):
+        spec_file.unlink()
+        print(f"  - 삭제: {spec_file.name}")
     
     print("정리 완료!")
 
@@ -151,6 +175,7 @@ if __name__ == "__main__":
         success = build_exe()
         
         if success:
-            print("\n배포 준비 완료! dist/renQoder.exe를 배포하세요.")
+            version = get_version()
+            print(f"\n배포 준비 완료! dist/renQoder-v{version}.exe를 배포하세요.")
         else:
             sys.exit(1)

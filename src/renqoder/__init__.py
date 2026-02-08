@@ -3,5 +3,5 @@ renQoder - Smart Video Transcoder
 고화질 비디오를 지능적으로 압축하는 비디오 트랜스코딩 툴
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __author__ = "renQoder Team"
