@@ -256,7 +256,7 @@ class VideoEncoder:
         """
         duration = video_info.get('duration', 0)
         if duration <= 0:
-            return 0
+            return {'total': 0, 'video': 0, 'audio': 0}
             
         width = video_info.get('width', 1920)
         height = video_info.get('height', 1080)
