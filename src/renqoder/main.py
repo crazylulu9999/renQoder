@@ -29,6 +29,7 @@ from hardware_detector import HardwareDetector, check_ffmpeg
 from encoder import VideoEncoder
 from taskbar import TaskbarController
 from notification import show_toast
+from __init__ import __version__
 
 # 테마 설정
 ctk.set_appearance_mode("Dark")
@@ -119,7 +120,7 @@ class MainWindow(ctk.CTk):
 
     def init_ui(self):
         """UI 구성"""
-        self.title("renQoder - Smart Video Transcoder")
+        self.title(f"renQoder v{__version__} - Smart Video Transcoder")
         self.geometry("700x800")
         
         # 아이콘 설정 (.ico 파일 우선 사용)
