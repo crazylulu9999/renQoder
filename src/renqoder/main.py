@@ -30,6 +30,7 @@ from encoder import VideoEncoder
 from taskbar import TaskbarController
 from notification import show_toast
 from __init__ import __version__
+from searcher import VideoSearcher
 
 # 테마 설정
 ctk.set_appearance_mode("Dark")
@@ -89,6 +90,9 @@ class MainWindow(ctk.CTk):
         self.encoder = VideoEncoder(encoder_info['encoder'])
         self.accent_color = self.detector.get_accent_color()
         
+        # 검색기 초기화
+        self.searcher = VideoSearcher()
+        
         # 변수
         self.input_file = None
         self.output_file = None
@@ -134,17 +138,11 @@ class MainWindow(ctk.CTk):
                 print(f"✗ 아이콘 로드 오류: {e}")
         
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)  # Changed to row 1 for tabview
 
-        # 메인 프레임 (스크롤바 제거를 위해 일반 프레임으로 변경)
-        self.main_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
-        self.main_frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=10)
-        self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(7, weight=1)
-
-        # 1. 헤더 (로고, 타이틀 & 슬로건)
-        self.header_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.header_frame.grid(row=0, column=0, pady=(0, 15))
+        # 공통 헤더 (로고, 타이틀 & 슬로건)
+        self.header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(10, 0))
         
         # 로고 아이콘 추가
         icon_png_path = self.get_resource_path("resources/icon.png")
@@ -223,18 +221,39 @@ class MainWindow(ctk.CTk):
             )
             self.test_notify_btn.pack(side="top")
 
-        # 2. GPU 정보
+        # 탭뷰 생성
+        self.tabview = ctk.CTkTabview(self, corner_radius=0)
+        self.tabview.grid(row=1, column=0, sticky="nsew", padx=20, pady=(10, 10))
+        
+        # 탭 추가
+        self.tabview.add("Encoding")
+        self.tabview.add("Search")
+        
+        # Encoding 탭 초기화
+        self.init_encoding_tab()
+        
+        # Search 탭 초기화
+        self.init_search_tab()
+
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def init_encoding_tab(self):
+        """인코딩 탭 UI 구성"""
+        encoding_tab = self.tabview.tab("Encoding")
+        encoding_tab.grid_columnconfigure(0, weight=1)
+
+        # GPU 정보
         encoder_info = self.detector.get_encoder_info()
         self.gpu_info_label = ctk.CTkLabel(
-            self.main_frame,
+            encoding_tab,
             text=f"🎮 감지된 GPU: {encoder_info['vendor']} ({encoder_info['name']})",
             text_color=self.accent_color,
             font=ctk.CTkFont(weight="bold")
         )
-        self.gpu_info_label.grid(row=2, column=0, pady=(0, 15))
+        self.gpu_info_label.grid(row=0, column=0, pady=(10, 15))
 
         # 3. 입력 파일 및 출력 파일 섹션
-        self.files_container = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.files_container = ctk.CTkFrame(encoding_tab, fg_color="transparent")
         self.files_container.grid(row=1, column=0, pady=(0, 15), sticky="ew")
         self.files_container.grid_columnconfigure(0, weight=1)
 
@@ -310,11 +329,9 @@ class MainWindow(ctk.CTk):
             command=lambda: self.open_folder(self.output_file)
         )
         self.output_folder_btn.grid(row=0, column=2)
-        
-        self.output_folder_btn.grid(row=0, column=2)
 
         # 4. 설정 섹션 (화질 & 오디오 가로 배치)
-        self.settings_container = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.settings_container = ctk.CTkFrame(encoding_tab, fg_color="transparent")
         self.settings_container.grid(row=3, column=0, pady=(0, 15), sticky="ew")
         self.settings_container.grid_columnconfigure((0, 1), weight=1)
 
@@ -423,7 +440,7 @@ class MainWindow(ctk.CTk):
             "AAC 변환 (192kbps) - 호환성 우선": "aac"
         }
 
-        self.summary_frame = ctk.CTkFrame(self.main_frame)
+        self.summary_frame = ctk.CTkFrame(encoding_tab)
         self.summary_frame.grid(row=4, column=0, padx=10, pady=(0, 15), sticky="ew")
         self.summary_frame.grid_columnconfigure(0, weight=1)
 
@@ -438,7 +455,7 @@ class MainWindow(ctk.CTk):
         self.drive_space_label = ctk.CTkLabel(self.summary_frame, text="", font=ctk.CTkFont(size=12), text_color="#888")
         self.drive_space_label.pack(pady=(0, 15))
 
-        self.ffmpeg_frame = ctk.CTkFrame(self.main_frame)
+        self.ffmpeg_frame = ctk.CTkFrame(encoding_tab)
         self.ffmpeg_frame.grid(row=5, column=0, padx=10, pady=(0, 15), sticky="ew")
         self.ffmpeg_frame.grid_columnconfigure(0, weight=1)
         
@@ -472,7 +489,7 @@ class MainWindow(ctk.CTk):
         self.ffmpeg_preview.configure(state="disabled")
 
         # 7. 실행 섹션
-        self.action_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.action_frame = ctk.CTkFrame(encoding_tab, fg_color="transparent")
         self.action_frame.grid(row=6, column=0, pady=(0, 15), sticky="ew")
         self.action_frame.grid_columnconfigure(0, weight=1)
 
@@ -496,15 +513,282 @@ class MainWindow(ctk.CTk):
 
         # 8. 로그
         self.log_text = ctk.CTkTextbox(
-            self.main_frame, 
+            encoding_tab, 
             height=100, 
             font=ctk.CTkFont(family="Consolas", size=12),
             text_color="#00FF00",
             fg_color="#1A1A1A"
         )
         self.log_text.grid(row=7, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        encoding_tab.grid_rowconfigure(7, weight=1)  # Log area expands
 
-        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+    def init_search_tab(self):
+        """검색 탭 UI 구성"""
+        search_tab = self.tabview.tab("Search")
+        search_tab.grid_columnconfigure(0, weight=1)
+        search_tab.grid_rowconfigure(4, weight=1)  # Results area expands
+
+        # Everything 감지 정보
+        everything_status = self.searcher.get_everything_status()
+        self.everything_info_label = ctk.CTkLabel(
+            search_tab,
+            text=everything_status['status_text'],
+            text_color=everything_status['color'],
+            font=ctk.CTkFont(weight="bold")
+        )
+        self.everything_info_label.grid(row=0, column=0, pady=(10, 5))
+
+        # Everything 다운로드 버튼 (미설치 시에만 표시)
+        if not everything_status['installed']:
+            self.everything_download_btn = ctk.CTkButton(
+                search_tab,
+                text="Everything 다운로드",
+                width=150,
+                height=28,
+                font=ctk.CTkFont(size=12),
+                fg_color="#0071c5",
+                hover_color="#005a9e",
+                command=lambda: webbrowser.open("https://www.voidtools.com/ko-kr/downloads/")
+            )
+            self.everything_download_btn.grid(row=1, column=0, pady=(0, 15))
+
+        # 검색 컨트롤 프레임
+        search_control_frame = ctk.CTkFrame(search_tab)
+        search_control_frame.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="ew")
+        search_control_frame.grid_columnconfigure(1, weight=1)
+
+        # 드라이브 선택
+        ctk.CTkLabel(search_control_frame, text="드라이브:", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=(20, 10), pady=15, sticky="w")
+        
+        drives = self.searcher.get_drives()
+        self.drive_var = ctk.StringVar(value=drives[0] if drives else "C:\\")
+        self.drive_combo = ctk.CTkComboBox(
+            search_control_frame,
+            variable=self.drive_var,
+            values=drives,
+            width=100,
+            state="readonly"
+        )
+        self.drive_combo.grid(row=0, column=1, padx=(0, 10), pady=15, sticky="w")
+
+        # 검색 버튼
+        self.search_btn = ctk.CTkButton(
+            search_control_frame,
+            text="🔍 검색 시작",
+            width=120,
+            height=32,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=self.accent_color,
+            hover_color=self.adjust_color_brightness(self.accent_color, 1.2),
+            command=self.start_search
+        )
+        self.search_btn.grid(row=0, column=2, padx=(0, 20), pady=15)
+
+        # 필터 프레임
+        filter_frame = ctk.CTkFrame(search_tab)
+        filter_frame.grid(row=3, column=0, padx=10, pady=(0, 10), sticky="ew")
+        filter_frame.grid_columnconfigure((1, 3), weight=1)
+
+        ctk.CTkLabel(filter_frame, text="필터", font=ctk.CTkFont(weight="bold", size=13)).grid(row=0, column=0, columnspan=4, padx=20, pady=(15, 10), sticky="w")
+
+        # 컨테이너 필터
+        ctk.CTkLabel(filter_frame, text="컨테이너:").grid(row=1, column=0, padx=(20, 10), pady=5, sticky="w")
+        self.container_var = ctk.StringVar(value="전체")
+        self.container_combo = ctk.CTkComboBox(
+            filter_frame,
+            variable=self.container_var,
+            values=["전체", "mp4", "mkv", "avi", "ts", "m2ts", "mov", "wmv", "flv", "webm"],
+            width=120
+        )
+        self.container_combo.grid(row=1, column=1, padx=(0, 20), pady=5, sticky="w")
+
+        # 최소 크기 필터
+        ctk.CTkLabel(filter_frame, text="최소 크기:").grid(row=1, column=2, padx=(20, 10), pady=5, sticky="w")
+        self.min_size_var = ctk.StringVar(value="제한 없음")
+        self.min_size_combo = ctk.CTkComboBox(
+            filter_frame,
+            variable=self.min_size_var,
+            values=["제한 없음", "100MB", "500MB", "1GB", "5GB", "10GB"],
+            width=120
+        )
+        self.min_size_combo.grid(row=1, column=3, padx=(0, 20), pady=(5, 15), sticky="w")
+
+        # 결과 프레임
+        results_frame = ctk.CTkFrame(search_tab)
+        results_frame.grid(row=4, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        results_frame.grid_columnconfigure(0, weight=1)
+        results_frame.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(results_frame, text="검색 결과", font=ctk.CTkFont(weight="bold", size=13)).grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
+
+        # Treeview 스타일 설정을 위한 프레임
+        tree_container = ctk.CTkFrame(results_frame, fg_color="#2B2B2B")
+        tree_container.grid(row=1, column=0, padx=20, pady=(0, 10), sticky="nsew")
+        tree_container.grid_columnconfigure(0, weight=1)
+        tree_container.grid_rowconfigure(0, weight=1)
+
+        # Treeview 생성
+        import tkinter.ttk as ttk
+        
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure("Treeview",
+                       background="#2B2B2B",
+                       foreground="white",
+                       fieldbackground="#2B2B2B",
+                       borderwidth=0)
+        style.configure("Treeview.Heading",
+                       background="#1A1A1A",
+                       foreground="white",
+                       borderwidth=1)
+        style.map('Treeview', background=[('selected', self.accent_color)])
+
+        # 스크롤바
+        tree_scroll = ctk.CTkScrollbar(tree_container)
+        tree_scroll.grid(row=0, column=1, sticky="ns")
+
+        self.results_tree = ttk.Treeview(
+            tree_container,
+            columns=("name", "path", "size", "ext"),
+            show="headings",
+            yscrollcommand=tree_scroll.set,
+            selectmode="browse"
+        )
+        tree_scroll.configure(command=self.results_tree.yview)
+
+        # 컬럼 설정
+        self.results_tree.heading("name", text="파일명")
+        self.results_tree.heading("path", text="경로")
+        self.results_tree.heading("size", text="크기")
+        self.results_tree.heading("ext", text="확장자")
+
+        self.results_tree.column("name", width=250, minwidth=150)
+        self.results_tree.column("path", width=400, minwidth=200)
+        self.results_tree.column("size", width=100, minwidth=80)
+        self.results_tree.column("ext", width=80, minwidth=60)
+
+        self.results_tree.grid(row=0, column=0, sticky="nsew")
+
+        # 액션 프레임
+        action_frame = ctk.CTkFrame(search_tab, fg_color="transparent")
+        action_frame.grid(row=5, column=0, padx=10, pady=(0, 10), sticky="ew")
+        action_frame.grid_columnconfigure(0, weight=1)
+
+        self.send_to_encoder_btn = ctk.CTkButton(
+            action_frame,
+            text="➡️ 선택한 파일을 인코딩 탭으로 보내기",
+            height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color="#0071c5",
+            hover_color="#005a9e",
+            state="disabled",
+            command=self.send_to_encoder
+        )
+        self.send_to_encoder_btn.grid(row=0, column=0, padx=10, sticky="ew")
+
+        # Treeview 선택 이벤트
+        self.results_tree.bind('<<TreeviewSelect>>', self.on_search_result_select)
+
+    def start_search(self):
+        """검색 시작"""
+        drive = self.drive_var.get()
+        container = self.container_var.get()
+        min_size_str = self.min_size_var.get()
+
+        # 필터 구성
+        filters = {}
+        if container != "전체":
+            filters['extension'] = container
+
+        # 최소 크기 변환
+        size_map = {
+            "100MB": 100 * 1024 * 1024,
+            "500MB": 500 * 1024 * 1024,
+            "1GB": 1024 * 1024 * 1024,
+            "5GB": 5 * 1024 * 1024 * 1024,
+            "10GB": 10 * 1024 * 1024 * 1024
+        }
+        if min_size_str in size_map:
+            filters['min_size'] = size_map[min_size_str]
+
+        # UI 비활성화
+        self.search_btn.configure(state="disabled", text="🔍 검색 중...")
+        self.results_tree.delete(*self.results_tree.get_children())
+
+        # 백그라운드 스레드에서 검색 실행
+        import threading
+        thread = threading.Thread(
+            target=self.search_worker,
+            args=(drive, filters),
+            daemon=True
+        )
+        thread.start()
+
+    def search_worker(self, drive, filters):
+        """검색 작업 스레드"""
+        try:
+            results = self.searcher.search(drive, filters)
+            
+            # UI 업데이트는 메인 스레드에서
+            self.after(0, lambda: self.update_search_results(results))
+        except Exception as e:
+            self.after(0, lambda: self.log(f"검색 오류: {e}"))
+            self.after(0, lambda: self.search_btn.configure(state="normal", text="🔍 검색 시작"))
+
+    def update_search_results(self, results):
+        """검색 결과 업데이트"""
+        self.results_tree.delete(*self.results_tree.get_children())
+        
+        for item in results:
+            size_mb = item['size'] / (1024 * 1024)
+            size_str = f"{size_mb:.1f} MB" if size_mb < 1024 else f"{size_mb/1024:.2f} GB"
+            
+            self.results_tree.insert("", "end", values=(
+                item['name'],
+                item['path'],
+                size_str,
+                item['extension']
+            ))
+        
+        self.search_btn.configure(state="normal", text="🔍 검색 시작")
+        self.log(f"검색 완료: {len(results)}개 파일 발견")
+
+    def on_search_result_select(self, event):
+        """검색 결과 선택 시"""
+        selection = self.results_tree.selection()
+        if selection:
+            self.send_to_encoder_btn.configure(state="normal")
+        else:
+            self.send_to_encoder_btn.configure(state="disabled")
+
+    def send_to_encoder(self):
+        """선택한 파일을 인코딩 탭으로 전송"""
+        selection = self.results_tree.selection()
+        if not selection:
+            return
+        
+        item = self.results_tree.item(selection[0])
+        file_path = item['values'][1]  # path column
+        
+        # 인코딩 탭으로 전환
+        self.tabview.set("Encoding")
+        
+        # 파일 설정
+        self.input_file = file_path
+        self.auto_naming = True
+        
+        file_name = Path(file_path).name
+        self.file_label.configure(text=f"📁 {file_name}")
+        
+        # 비디오 정보
+        video_info = self.encoder.get_video_info(file_path)
+        d = video_info['duration']
+        duration_str = f"{int(d // 60)}분 {int(d % 60)}초" if d > 0 else "알 수 없음"
+        
+        self.log(f"검색 탭에서 파일 선택됨: {file_name}")
+        self.log(f"정보: {video_info['codec'].upper()} | {video_info['width']}x{video_info['height']} | {duration_str} | {video_info['fps']:.2f}fps")
+        
+        self.update_ui_state()
 
     def open_folder(self, file_path):
         """파일이 위치한 폴더를 시스템 탐색기로 엽니다"""

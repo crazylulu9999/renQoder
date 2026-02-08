@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.3.0] - 2026-02-07
+## [0.3.0] - 2026-02-08
 
 ### Added
+- ✅ **동영상 파일 검색 기능**: Everything 검색 엔진 통합으로 드라이브 전체에서 동영상 파일을 초고속 검색 ✨
+  - Everything CLI (es.exe) 자동 감지 및 통합
+  - Everything 미설치 시 OS 검색으로 자동 폴백
+  - 드라이브 선택 및 필터 기능 (컨테이너 타입, 최소 파일 크기)
+  - 검색 결과 테이블 (파일명, 경로, 크기, 확장자)
+  - 검색 결과를 인코딩 탭으로 직접 전송 기능
+- ✅ **탭 기반 UI 리팩토링**: 인코딩과 검색 기능을 별도 탭으로 분리하여 워크플로우 개선 ✨
 - ✅ **인코딩 완료 시 OS 알림 표시**: Windows 10/11 Toast 알림으로 인코딩 완료 및 용량 절감 정보를 실시간으로 알림 ✨
 - ✅ **개발 모드 자동 감지**: `sys.frozen` 속성을 활용하여 개발/배포 환경을 자동으로 구분 ✨
 - ✅ **알림 테스트 버튼**: 개발 모드에서만 표시되는 알림 테스트 기능 추가 (배포 버전에서는 숨김) ✨
@@ -30,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - ✅ 특정 환경에서 파일 선택 시 `.ts` 파일이 보이지 않던 문제 해결
 - ✅ `win10toast` 라이브러리의 WNDPROC 에러 메시지 처리 개선
+
+### Technical Details
+- 새 모듈: `src/renqoder/searcher.py` - VideoSearcher 클래스
+- Everything CLI stdout 파싱 (임시 파일 생성 없음)
+- 백그라운드 스레드 기반 논블로킹 검색
 
 ### Dependencies
 - `win10toast`: Windows 10/11 Toast 알림 표시를 위한 라이브러리 추가
