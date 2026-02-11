@@ -1,6 +1,6 @@
 """
 renQoder - Smart Video Transcoder
-0.3.0 버전
+0.4.0 버전
 """
 
 import sys
