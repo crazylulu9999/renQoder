@@ -8,6 +8,7 @@ import os
 import re
 import json
 from pathlib import Path
+from metadata_utils import get_video_info, get_audio_info, format_duration
 
 
 class VideoEncoder:
@@ -23,147 +24,17 @@ class VideoEncoder:
         
     def get_audio_info(self, input_file):
         """ffprobe JSON 포맷을 사용하여 오디오 상세 정보(코덱 + 비트레이트)를 가져옵니다."""
-        try:
-            cmd = [
-                'ffprobe',
-                '-v', 'quiet',
-                '-print_format', 'json',
-                '-show_streams',
-                '-select_streams', 'a:0',
-                input_file
-            ]
-            
-            # Windows에서 CMD 창 생성 방지
-            creationflags = 0x08000000 if os.name == 'nt' else 0
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, creationflags=creationflags)
-            if result.returncode == 0:
-                data = json.loads(result.stdout)
-                streams = data.get('streams', [])
-                if not streams:
-                    return 'None'
-                
-                a_stream = streams[0]
-                codec = a_stream.get('codec_name', 'UNKNOWN').upper()
-                bitrate_raw = a_stream.get('bit_rate', '')
-                
-                # 코덱 이름 정리
-                if 'AAC' in codec: display_codec = 'AAC'
-                elif 'AC3' in codec: display_codec = 'AC3'
-                elif 'EAC3' in codec: display_codec = 'EAC3'
-                elif 'DTS' in codec: display_codec = 'DTS'
-                elif 'TRUEHD' in codec: display_codec = 'TrueHD'
-                elif 'FLAC' in codec: display_codec = 'FLAC'
-                elif 'OPUS' in codec: display_codec = 'Opus'
-                elif 'PCM' in codec: display_codec = 'PCM'
-                else: display_codec = codec
-                
-                # 비트레이트 정보 추가
-                if bitrate_raw and str(bitrate_raw).isdigit():
-                    kbps = round(int(bitrate_raw) / 1000)
-                    return f"{display_codec}{kbps}k"
-                
-                return display_codec
-        except Exception as e:
-            print(f"오디오 정보 가져오기 실패: {e}")
-        
-        return 'Unknown'
+        return get_audio_info(input_file)
     
     def get_video_info(self, input_file):
         """
         ffprobe JSON 포맷을 사용하여 비디오 파일의 상세 정보를 가져옵니다.
         """
-        info = {
-            'duration': 0,
-            'frames': 0,
-            'fps': 0,
-            'width': 0,
-            'height': 0,
-            'codec': 'unknown',
-            'size': 0,
-            'bit_rate': 0,
-            'audio_size': 0
-        }
+        info = get_video_info(input_file)
         
-        try:
-            # JSON 포맷으로 상세 정보 요청
-            cmd = [
-                'ffprobe',
-                '-v', 'quiet',
-                '-print_format', 'json',
-                '-show_format',
-                '-show_streams',
-                input_file
-            ]
-            
-            # Windows에서 CMD 창 생성 방지
-            creationflags = 0x08000000 if os.name == 'nt' else 0
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5, creationflags=creationflags)
-            if result.returncode == 0:
-                data = json.loads(result.stdout)
-                
-                # Format 섹션에서 전체 정보 확인
-                format_data = data.get('format', {})
-                if 'duration' in format_data:
-                    info['duration'] = float(format_data['duration'])
-                if 'size' in format_data:
-                    info['size'] = int(format_data['size'])
-                if 'bit_rate' in format_data:
-                    info['bit_rate'] = int(format_data['bit_rate'])
-
-                # Stream 섹션에서 스트림 정보 확인
-                streams = data.get('streams', [])
-                total_audio_size = 0
-                
-                for stream in streams:
-                    codec_type = stream.get('codec_type')
-                    
-                    if codec_type == 'video' and info['codec'] == 'unknown':
-                        info['codec'] = stream.get('codec_name', 'unknown')
-                        info['width'] = int(stream.get('width', 0))
-                        info['height'] = int(stream.get('height', 0))
-                        
-                        # nb_frames 확인
-                        if stream.get('nb_frames'):
-                            info['frames'] = int(stream['nb_frames'])
-                        
-                        # FPS 확인 (r_frame_rate "30/1" 형식 대응)
-                        fps_raw = stream.get('r_frame_rate', '0/0')
-                        if '/' in fps_raw:
-                            num, den = fps_raw.split('/')
-                            if float(den) > 0:
-                                info['fps'] = float(num) / float(den)
-                    
-                    elif codec_type == 'audio':
-                        # 실제 스트림 사이즈 정보가 있는 경우 사용
-                        s_size = int(stream.get('size', 0))
-                        if s_size <= 0:
-                            # 사이즈 정보가 없으면 비트레이트와 길이로 계산
-                            s_bitrate = int(stream.get('bit_rate', 0))
-                            s_duration = float(stream.get('duration', info['duration']))
-                            if s_bitrate > 0 and s_duration > 0:
-                                s_size = int((s_bitrate * s_duration) / 8)
-                        
-                        total_audio_size += s_size
-                
-                info['audio_size'] = total_audio_size
-                
-                # 보정: nb_frames가 없거나 0인 경우 (duration * fps)
-                if info['frames'] <= 0 and info['duration'] > 0 and info['fps'] > 0:
-                    info['frames'] = int(info['duration'] * info['fps'])
-                # 보정: duration이 없는데 frames/fps가 있는 경우
-                elif info['duration'] <= 0 and info['frames'] > 0 and info['fps'] > 0:
-                    info['duration'] = info['frames'] / info['fps']
-
-            # 최종 클래스 변수 업데이트
-            self.total_seconds = info['duration']
-            self.total_frames = info['frames']
-            
-            return info
-            
-        except Exception as e:
-            print(f"비디오 정보 가져오기 실패: {e}")
+        # 최종 클래스 변수 업데이트 (기존 코드 호환성)
+        self.total_seconds = info['duration']
+        self.total_frames = info.get('frames', 0)
         
         return info
     
@@ -497,6 +368,8 @@ class VideoEncoder:
     def convert_to_seconds(self, time_str):
         """HH:MM:SS.ms 형식의 문자열을 초(float) 단위로 변환"""
         try:
+            # metadata_utils의 로직은 아니지만 단순 변환이므로 유지하거나 
+            # 필요시 통합 가능. 여기서는 그대로 둠.
             h, m, s = time_str.split(':')
             return int(h) * 3600 + int(m) * 60 + float(s)
         except Exception:

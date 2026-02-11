@@ -31,6 +31,7 @@ from taskbar import TaskbarController
 from notification import show_toast
 from __init__ import __version__
 from searcher import VideoSearcher
+from metadata_utils import format_duration
 
 # 테마 설정
 ctk.set_appearance_mode("Dark")
@@ -49,9 +50,13 @@ class ToolTip:
         if self.tooltip_window or not self.text:
             return
         
-        # 툴팁 위치 계산 (위젯 하단)
-        x = self.widget.winfo_rootx() + 10
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 10
+        # 마우스 위치 기반 또는 위젯 기반 좌표 계산
+        if event:
+            x = event.x_root + 15
+            y = event.y_root + 10
+        else:
+            x = self.widget.winfo_rootx() + 10
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 10
         
         self.tooltip_window = tw = tk.Toplevel(self.widget)
         tw.wm_overrideredirect(True) # 테두리 제거
@@ -111,6 +116,11 @@ class MainWindow(ctk.CTk):
         
         # UI 초기화
         self.init_ui()
+        
+        # 툴팁 인스턴스 초기화 (Treeview용 동적 툴팁)
+        self.tree_tooltip = ToolTip(self.results_tree, "")
+        self.results_tree.bind("<Motion>", self.on_tree_motion)
+        self.results_tree.bind("<Leave>", lambda e: self.tree_tooltip.hide_tooltip())
         
         # 작업표시줄 컨트롤러 초기화 (Windows 전용)
         if sys.platform == "win32":
@@ -798,6 +808,17 @@ class MainWindow(ctk.CTk):
         )
         self.min_bitrate_combo.grid(row=1, column=7, padx=(0, 20), pady=(0, 15), sticky="w")
 
+        # 비정상 파일 필터 (체크박스)
+        self.abnormal_only_var = ctk.BooleanVar(value=False)
+        self.abnormal_only_check = ctk.CTkCheckBox(
+            filter_frame,
+            text="비정상 파일만",
+            variable=self.abnormal_only_var,
+            width=100,
+            command=self.apply_filters
+        )
+        self.abnormal_only_check.grid(row=1, column=8, padx=(0, 20), pady=(0, 15), sticky="w")
+
         # 결과 프레임
         results_frame = ctk.CTkFrame(search_tab)
         results_frame.grid(row=4, column=0, padx=10, pady=(0, 10), sticky="nsew")
@@ -835,17 +856,19 @@ class MainWindow(ctk.CTk):
 
         self.results_tree = ttk.Treeview(
             tree_container,
-            columns=("name", "codec", "res", "fps", "size", "bitrate", "length", "ext", "path"),
+            columns=("name", "abnormal", "codec", "res", "fps", "size", "bitrate", "length", "ext", "path"),
             show="headings",
             yscrollcommand=tree_scroll.set,
             selectmode="browse"
         )
         self.results_tree.tag_configure("loading", foreground="#666666")
+        self.results_tree.tag_configure("estimated", foreground="#FFA500") # Orange for estimated fields
         tree_scroll.configure(command=self.results_tree.yview)
 
         # 컬럼 설정
         self.column_headings = {
             "name": "파일명",
+            "abnormal": "상태",
             "codec": "코덱",
             "res": "해상도",
             "fps": "FPS",
@@ -858,6 +881,7 @@ class MainWindow(ctk.CTk):
         
         widths = {
             "name": 200,
+            "abnormal": 40,
             "codec": 80,
             "res": 100,
             "fps": 60,
@@ -1096,6 +1120,7 @@ class MainWindow(ctk.CTk):
         min_size_str = self.min_size_var.get()
         codec_filter = self.search_codec_var.get()
         min_bitrate_str = self.min_bitrate_var.get()
+        abnormal_only = self.abnormal_only_var.get()
 
         # 크기 필터 값 변환
         size_map = {
@@ -1143,6 +1168,11 @@ class MainWindow(ctk.CTk):
                 if item.get('bitrate', 0) < min_bitrate:
                     continue
             
+            # 비정상 파일 필터 (추정된 필드가 하나라도 있는 경우)
+            if abnormal_only:
+                if not item.get('estimated_fields'):
+                    continue
+            
             filtered.append(item)
 
         # 정렬 적용
@@ -1158,6 +1188,16 @@ class MainWindow(ctk.CTk):
                 if self.sort_column == "length":
                     # 길이는 초 단위 duration으로 정렬
                     return x.get('duration', 0.0)
+                if self.sort_column == "abnormal":
+                    # 상태별 정렬 우선순위: 비정상(3) > 미분석(2) > 분석 중(1) > 정상(0)
+                    if x.get('estimated_fields'):
+                        return 3
+                    if not x.get('metadata_loaded'):
+                        return 2
+                    # 기초 정보는 있으나 정밀 분석(Stage 2) 대기/진행 중인 경우
+                    if self.metadata_thread_running and x.get('duration', 0) <= 0 and not x.get('invalid'):
+                        return 1
+                    return 0
                 val = x.get(self.sort_column)
                 if val is None:
                     return 0 if self.sort_column in ['size', 'bitrate', 'fps', 'width', 'height', 'duration'] else ""
@@ -1196,8 +1236,8 @@ class MainWindow(ctk.CTk):
         selected_path = None
         if selected:
             curr_values = self.results_tree.item(selected[0])['values']
-            if len(curr_values) > 8:
-                selected_path = curr_values[8]
+            if len(curr_values) > 9:
+                selected_path = curr_values[9]
 
         # 데이터 업데이트
         self.results_tree.delete(*self.results_tree.get_children())
@@ -1207,10 +1247,22 @@ class MainWindow(ctk.CTk):
             size_str = f"{size_mb:.1f} MB" if size_mb < 1024 else f"{size_mb/1024:.2f} GB"
             
             bitrate = item.get('bitrate', 0)
+            # 비트레이트 표시 (미디어 표준인 1000 단위를 사용)
             bitrate_kbps = f"{bitrate / 1000:,.0f} kbps" if item.get('metadata_loaded') and bitrate > 0 else "-"
+
+            # 상태 아이콘 결정
+            if item.get('estimated_fields'):
+                status_icon = "⚠️"
+            elif not item.get('metadata_loaded'):
+                status_icon = "⏳"
+            elif self.metadata_thread_running and item.get('duration', 0) <= 0 and not item.get('invalid'):
+                status_icon = "🔍"
+            else:
+                status_icon = "✅"
             
             values = (
                 item['name'],
+                status_icon,
                 item.get('codec', '-').upper(),
                 item.get('resolution', '-'),
                 item.get('fps', '-'),
@@ -1220,7 +1272,6 @@ class MainWindow(ctk.CTk):
                 item['extension'].upper(),
                 item['path']
             )
-            
             # 하이라이트 태그 설정 (1단계 미완료이거나, 2단계 분석 대기 중인 경우)
             is_loading = not item.get('metadata_loaded')
             if not is_loading and self.metadata_thread_running:
@@ -1228,7 +1279,12 @@ class MainWindow(ctk.CTk):
                 if item.get('duration', 0) <= 0 and not item.get('invalid'):
                     is_loading = True
             
-            tags = ("loading",) if is_loading else ()
+            tags = ()
+            if is_loading:
+                tags = ("loading",)
+            elif item.get('estimated_fields'):
+                tags = ("estimated",)
+            
             node = self.results_tree.insert("", "end", values=values, tags=tags)
             
             # 선택 상태 복원
@@ -1239,6 +1295,46 @@ class MainWindow(ctk.CTk):
     def update_search_results(self, results):
         """이전 방식 호환성 유지용"""
         pass
+
+    def on_tree_motion(self, event):
+        """Treeview 마우스 이동 시 툴팁 처리"""
+        item_id = self.results_tree.identify_row(event.y)
+        if not item_id:
+            self.tree_tooltip.hide_tooltip()
+            return
+
+        # 해당 아이템의 태그 확인
+        tags = self.results_tree.item(item_id, "tags")
+        if "estimated" in tags:
+            # 원본 데이터 찾기 (아이템 인덱스로 추적)
+            # Treeview의 모든 아이템을 순회하며 찾거나, update_treeview 시 map을 만들 수도 있지만
+            # 여기서는 path를 기준으로 all_search_results에서 찾음
+            values = self.results_tree.item(item_id, "values")
+            if len(values) > 9:
+                filepath = values[9]
+                # 최적화를 위해 캐시된 데이터에서 찾기
+                target_item = next((i for i in self.all_search_results if i['path'] == filepath), None)
+                
+                if target_item and target_item.get('estimated_fields'):
+                    reasons = []
+                    for field, reason in target_item['estimated_fields'].items():
+                        field_name = "재생 시간" if field == "duration" else "비트레이트" if field == "bitrate" else field
+                        reasons.append(f"• {field_name}: {reason}")
+                    
+                    tooltip_text = "⚠️ 추정된 메타데이터 정보:\n" + "\n".join(reasons)
+                    
+                    # 툴팁 텍스트 업데이트 및 표시
+                    if self.tree_tooltip.text != tooltip_text:
+                        self.tree_tooltip.text = tooltip_text
+                        if self.tree_tooltip.tooltip_window:
+                            # 이미 열려있으면 내용만 변경은 어려우므로 일단 닫고 다시 열거나Label 업데이트
+                            # 여기서는 간단히 새로 고침
+                            self.tree_tooltip.hide_tooltip()
+                    
+                    self.tree_tooltip.show_tooltip(event)
+                    return
+
+        self.tree_tooltip.hide_tooltip()
 
     def show_context_menu(self, event):
         """우클릭 시 메뉴 표시"""
@@ -1278,7 +1374,7 @@ class MainWindow(ctk.CTk):
             return
             
         filename = values[0]
-        filepath = values[8]
+        filepath = values[9]
         
         if action == "open_folder":
             self.open_folder(filepath)
@@ -1364,7 +1460,7 @@ class MainWindow(ctk.CTk):
             return
         
         item = self.results_tree.item(selection[0])
-        file_path = item['values'][8]  # path column is index 8 (파일명, 코덱, 해상도, FPS, 크기, 비트레이트, 길이, 확장자, 경로)
+        file_path = item['values'][9]  # path column is index 9
         
         # 인코딩 탭으로 전환
         self.tabview.set("Encoding")
@@ -1378,8 +1474,7 @@ class MainWindow(ctk.CTk):
         
         # 비디오 정보
         video_info = self.encoder.get_video_info(file_path)
-        d = video_info['duration']
-        duration_str = f"{int(d // 60)}분 {int(d % 60)}초" if d > 0 else "알 수 없음"
+        duration_str = format_duration(video_info['duration'])
         
         self.log(f"검색 탭에서 파일 선택됨: {file_name}")
         self.log(f"정보: {video_info['codec'].upper()} | {video_info['width']}x{video_info['height']} | {duration_str} | {video_info['fps']:.2f}fps")
@@ -1599,8 +1694,7 @@ class MainWindow(ctk.CTk):
             
             # 비디오 정보
             video_info = self.encoder.get_video_info(file_path)
-            d = video_info['duration']
-            duration_str = f"{int(d // 60)}분 {int(d % 60)}초" if d > 0 else "알 수 없음"
+            duration_str = format_duration(video_info['duration'])
             
             self.log(f"파일 선택됨: {file_name}")
             self.log(f"정보: {video_info['codec'].upper()} | {video_info['width']}x{video_info['height']} | {duration_str} | {video_info['fps']:.2f}fps")

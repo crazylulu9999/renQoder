@@ -3,3 +3,4 @@ pyinstaller>=6.0.0
 Pillow>=10.0.0
 send2trash>=1.8.0
 win10toast
+comtypes>=1.4.0
