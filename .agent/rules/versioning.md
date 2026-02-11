@@ -15,12 +15,17 @@
     - `[Unreleased]` 섹션에 있던 내용이 릴리즈된 경우, 해당 버전 섹션으로 이동시키고 날짜를 기입합니다.
     - 하단의 `Version History` 섹션에도 동일한 버전을 추가하여 일관성을 유지합니다.
 
-## 3. Version Update Flow (버전 업데이트 절차)
+## 3. Version Management Policy (버전 관리 정책)
+- **No Automatic Bumping**: 문서 작성(README.md, CHANGELOG.md 업데이트 등) 시에 AI가 임의로 버전을 올리지 않습니다.
+- **Respect Existing Version**: 항상 `src\renqoder\__init__.py`에 정의된 현재 버전을 그대로 유지하며 문서에 반영합니다.
+- **Manual Update Only**: 버전 번호 상향은 오직 사용자가 명시적으로 요청하거나, 새로운 릴리즈 준비가 확정된 경우에만 수행합니다.
+
+## 4. Documentation Update Flow (문서 업데이트 절차)
 1. 기능 구현 또는 버그 수정 완료.
-2. `src\renqoder\__init__.py`에서 `__version__` 값을 업데이트 (필요 시).
-3. 업데이트된 버전을 바탕으로 `CHANGELOG.md` 작성.
-4. `README.md`의 주요 기능 및 로드맵 업데이트.
-5. 버전 번호가 포함된 모든 참조가 최신 상태인지 최종 확인.
+2. `src\renqoder\__init__.py`에서 현재 버전 확인 (수정하지 않음).
+3. 확인된 기존 버전을 기준으로 `CHANGELOG.md` 내용 추가/수정.
+4. `README.md`의 버전 및 로드맵 업데이트.
+5. 모든 문서가 `src\renqoder\__init__.py`의 현재 버전과 일치하는지 최종 확인.
 
 ## 4. Automation Consideration (자동화 고려)
 - CLI 또는 스크립트를 통해 버전을 확인할 때는 다음 명령어를 활용할 수 있습니다:
