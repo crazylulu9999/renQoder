@@ -44,6 +44,7 @@ tests/
 test_*.mp4
 test_*.mkv
 *_renQoder.*
+docs/
 
 # Logs
 *.log
