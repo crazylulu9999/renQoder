@@ -39,15 +39,18 @@ def check_and_install_requirements():
         needs_install = True
 
     if needs_install:
-        print("필요한 라이브러리를 설치/업데이트합니다...")
+        print("필요한 패키지를 설치 중입니다...", end=" ", flush=True)
         try:
-            # pip install 실행
+            # pip install 실행 (조용히 실행)
             subprocess.check_call(
-                [sys.executable, "-m", "pip", "install", "-r", str(requirements_path)]
+                [sys.executable, "-m", "pip", "install", "-r", str(requirements_path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT
             )
-            print("라이브러리 설치가 완료되었습니다.")
-        except subprocess.CalledProcessError as e:
-            print(f"라이브러리 설치 실패: {e}")
+            print("완료.")
+        except subprocess.CalledProcessError:
+            print("실패.")
+            print(f"오류: 'pip install -r requirements.txt' 명령어를 수동으로 실행해 주세요.")
             sys.exit(1)
 
 if __name__ == "__main__":
