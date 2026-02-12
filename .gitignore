@@ -45,6 +45,8 @@ test_*.mp4
 test_*.mkv
 *_renQoder.*
 docs/
+*.py
+!run.py
 
 # Logs
 *.log

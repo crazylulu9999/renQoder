@@ -1,5 +1,9 @@
-import comtypes.client as cc
-import ctypes
+try:
+    import comtypes.client as cc
+    import ctypes
+    HAS_COMTYPES = True
+except (ImportError, Exception):
+    HAS_COMTYPES = False
 
 class TaskbarController:
     """
@@ -20,6 +24,8 @@ class TaskbarController:
         self.hwnd = int(window_id)
         self.tbl = None
         try:
+            if not HAS_COMTYPES:
+                raise ImportError("comtypes not available")
             # ITaskbarList3 인터페이스 생성
             # CLSID_TaskbarList = {56FDF344-FD6D-11d0-958A-006097C9A090}
             self.tbl = cc.CreateObject("{56FDF344-FD6D-11d0-958A-006097C9A090}")
