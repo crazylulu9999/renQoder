@@ -46,6 +46,10 @@ class ToolTip:
         self.widget.bind("<Enter>", self.show_tooltip)
         self.widget.bind("<Leave>", self.hide_tooltip)
 
+    def set_text(self, text):
+        """툴팁에 표시될 텍스트를 업데이트합니다."""
+        self.text = text
+
     def show_tooltip(self, event=None):
         if self.tooltip_window or not self.text:
             return
@@ -363,21 +367,99 @@ class MainWindow(ctk.CTk):
         )
         self.output_folder_btn.grid(row=0, column=2)
 
-        # 4. 설정 섹션 (화질 & 오디오 가로 배치)
+        # 4. 설정 섹션 (코덱, 화질, 오디오)
         self.settings_container = ctk.CTkFrame(encoding_tab, fg_color="transparent")
         self.settings_container.grid(row=3, column=0, pady=(0, 15), sticky="ew")
         self.settings_container.grid_columnconfigure((0, 1), weight=1)
 
+        # 코덱 선택 (Row 0)
+        self.codec_frame = ctk.CTkFrame(self.settings_container, fg_color="transparent")
+        self.codec_frame.grid(row=0, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew")
+        
+        ctk.CTkLabel(self.codec_frame, text="비디오 코덱", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
+        
+        # 코덱 목록 가져오기 및 가공
+        try:
+            raw_codecs = self.detector.get_available_codecs()
+            self.codec_data_map = {} # 유선택 항목 -> 코덱 정보
+            self.codec_list = []
+            
+            default_codec_label = None
+            recommended_id = self.detector.recommended_encoder
+            
+            current_category = None
+            for c in raw_codecs:
+                # 카테고리 헤더 결정
+                category = f"--- Hardware - {c['vendor']} ---" if c['type'] == 'hardware' else "--- Software ---"
+                
+                if category != current_category:
+                    self.codec_list.append(category)
+                    current_category = category
+                
+                # 레이블 생성 (하드웨어 ⚡ 아이콘 적용)
+                if c['type'] == 'hardware':
+                    if c['available']:
+                        label = f"⚡ {c['label']}"
+                    else:
+                        label = f"❌ {c['label']} (미지원)"
+                else:
+                    label = f"   {c['label']}" # Software는 여백 추가하여 정렬
+                
+                self.codec_list.append(label)
+                self.codec_data_map[label] = c
+                
+                # 기본값 후보 (추천 코덱)
+                if c['id'] == recommended_id and c['available']:
+                    default_codec_label = label
+            
+            # 기본값 보정
+            if not default_codec_label:
+                for label in self.codec_list:
+                    if not label.startswith("---") and self.codec_data_map[label]['available']:
+                        default_codec_label = label
+                        break
+            
+            if not default_codec_label:
+                default_codec_label = self.codec_list[0]
+                
+        except Exception as e:
+            print(f"코덱 목록 로드 실패: {e}")
+            self.codec_list = ["--- Software ---", "   H.264 (x264)"]
+            self.codec_data_map = {"   H.264 (x264)": {'id': 'libx264', 'label': 'H.264 (x264)', 'available': True, 'description': '소프트웨어 H.264'}}
+            default_codec_label = "   H.264 (x264)"
+            
+        self.codec_var = ctk.StringVar(value=default_codec_label)
+        self.previous_codec_label = default_codec_label
+        
+        # 초기 선택된 코덱 ID 동기화
+        initial_info = self.codec_data_map.get(default_codec_label)
+        if initial_info:
+            self.encoder.encoder_type = initial_info['id']
+
+        self.codec_combo = ctk.CTkComboBox(
+            self.codec_frame,
+            variable=self.codec_var,
+            values=self.codec_list,
+            width=300, # 헤더 폭 고려하여 확장
+            command=self.on_codec_change,
+            state="readonly"
+        )
+        self.codec_combo.pack(side="left", padx=5)
+        
+        # 코덱 변경 이벤트 트리거 (초기 품질 UI 동기화)
+        self.after(100, self.update_quality_ui)
+        
         # 화질 설정
         self.quality_frame = ctk.CTkFrame(self.settings_container)
-        self.quality_frame.grid(row=0, column=0, padx=(10, 5), sticky="nsew")
+        self.quality_frame.grid(row=1, column=0, padx=(10, 5), sticky="nsew")
         self.quality_frame.grid_columnconfigure(0, weight=1)
 
         # 화질 설정 타이틀 + 툴팁
         self.quality_title_frame = ctk.CTkFrame(self.quality_frame, fg_color="transparent")
         self.quality_title_frame.grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
         
-        ctk.CTkLabel(self.quality_title_frame, text="화질 설정", font=ctk.CTkFont(weight="bold")).pack(side="left")
+        self.quality_title_label = ctk.CTkLabel(self.quality_title_frame, text="화질 설정", font=ctk.CTkFont(weight="bold"))
+        self.quality_title_label.pack(side="left")
         
         self.help_icon = ctk.CTkLabel(
             self.quality_title_frame, 
@@ -388,22 +470,56 @@ class MainWindow(ctk.CTk):
         )
         self.help_icon.pack(side="left", padx=2)
         
-        tooltip_text = (
-            "화질 설정 (CQ/CQP)\n\n"
-            "- 숫자가 낮을수록 고화질(대용량), 높을수록 저화질(저용량)입니다.\n"
-            "- 기술적인 전체 범위는 0~51이며, 본 자동화 툴은 실용적인 범위인 18~30을 제공합니다.\n"
-            "- 18~20: 초고화질 (20 권장, 육안으로 원본과 거의 구분 불가능)\n"
-            "- 23: 균형점 (화질과 용량의 조화)\n"
-            "- 28~30: 저용량 (용량 절감이 최우선인 경우)\n\n"
-            "* CQ(Constant Quality)는 목표 화질을 일정하게 유지하기 위해\n"
-            "  영상의 복잡도에 따라 비트레이트를 자동으로 조절하는 방식입니다."
-        )
-        ToolTip(self.help_icon, tooltip_text)
+        # 화질 도움말 툴팁 인스턴스 생성 (나중에 업데이트 가능하도록 저장)
+        self.quality_help_tooltip = ToolTip(self.help_icon, "")
         
         self.slider_labels_frame = ctk.CTkFrame(self.quality_frame, fg_color="transparent")
         self.slider_labels_frame.grid(row=1, column=0, padx=20, sticky="ew")
-        ctk.CTkLabel(self.slider_labels_frame, text="초고화질").pack(side="left")
-        ctk.CTkLabel(self.slider_labels_frame, text="저용량").pack(side="right")
+        self.slider_labels_frame.grid_columnconfigure(0, weight=1)
+        self.slider_labels_frame.grid_columnconfigure(1, weight=1)
+        self.slider_labels_frame.grid_columnconfigure(2, weight=1)
+
+        # 1. 고화질 (최소값) 버튼
+        self.quality_left_btn = ctk.CTkButton(
+            self.slider_labels_frame, 
+            text="고화질", 
+            width=60, 
+            height=24,
+            fg_color="transparent", 
+            border_width=1,
+            border_color="#555",
+            text_color="#CCC",
+            font=ctk.CTkFont(size=11)
+        )
+        self.quality_left_btn.grid(row=0, column=0, sticky="w")
+        
+        # 2. 권장값 버튼
+        self.quality_recommend_btn = ctk.CTkButton(
+            self.slider_labels_frame, 
+            text="권장", 
+            width=60, 
+            height=24,
+            fg_color="transparent", 
+            border_width=1,
+            border_color="#4CAF50", # 권장 색상 강조
+            text_color="#4CAF50",
+            font=ctk.CTkFont(size=11, weight="bold")
+        )
+        self.quality_recommend_btn.grid(row=0, column=1)
+
+        # 3. 저용량 (최대값) 버튼
+        self.quality_right_btn = ctk.CTkButton(
+            self.slider_labels_frame, 
+            text="저용량", 
+            width=60, 
+            height=24,
+            fg_color="transparent", 
+            border_width=1,
+            border_color="#555",
+            text_color="#CCC",
+            font=ctk.CTkFont(size=11)
+        )
+        self.quality_right_btn.grid(row=0, column=2, sticky="e")
 
         self.quality_slider = ctk.CTkSlider(
             self.quality_frame, 
@@ -488,72 +604,70 @@ class MainWindow(ctk.CTk):
         self.drive_space_label = ctk.CTkLabel(self.summary_frame, text="", font=ctk.CTkFont(size=12), text_color="#888")
         self.drive_space_label.pack(pady=(0, 15))
 
-        self.ffmpeg_frame = ctk.CTkFrame(encoding_tab)
-        self.ffmpeg_frame.grid(row=5, column=0, padx=10, pady=(0, 15), sticky="ew")
-        self.ffmpeg_frame.grid_columnconfigure(0, weight=1)
-        
-        self.ffmpeg_header = ctk.CTkFrame(self.ffmpeg_frame, fg_color="transparent")
-        self.ffmpeg_header.grid(row=0, column=0, padx=20, pady=(15, 5), sticky="ew")
-        
-        ctk.CTkLabel(self.ffmpeg_header, text="🔧 FFmpeg 명령어 미리보기", font=ctk.CTkFont(weight="bold")).pack(side="left")
-        
-        self.copy_btn = ctk.CTkButton(
-            self.ffmpeg_header, 
-            text="📋 한 줄로 복사", 
-            width=100, 
-            height=25,
-            font=ctk.CTkFont(size=11),
+        # 7. 실행 섹션
+        self.action_frame = ctk.CTkFrame(encoding_tab, fg_color="transparent")
+        self.action_frame.grid(row=5, column=0, pady=(0, 15), sticky="ew") # row 5로 당김
+        self.action_frame.grid_columnconfigure((0, 1), weight=0) # 복사 버튼들은 고정 너비
+        self.action_frame.grid_columnconfigure(2, weight=1) # 시작 버튼이 영역 채움
+
+        # Windows CMD 복사 버튼
+        self.copy_cmd_windows_btn = ctk.CTkButton(
+            self.action_frame,
+            text="📋 Copy (CMD)",
+            height=40,
+            width=120,
+            font=ctk.CTkFont(size=13, weight="bold"),
             fg_color="#444",
             hover_color="#555",
             state="disabled",
-            command=self.copy_ffmpeg_command
+            command=self.copy_cmd_windows
         )
-        self.copy_btn.pack(side="right")
-        
-        self.ffmpeg_preview = ctk.CTkTextbox(
-            self.ffmpeg_frame, 
-            height=100, 
-            font=ctk.CTkFont(family="Consolas", size=11),
-            text_color="#00FF00",
-            fg_color="#1A1A1A"
+        self.copy_cmd_windows_btn.grid(row=0, column=0, padx=(10, 2), sticky="w")
+
+        # Unix Shell 복사 버튼 (Bash, WSL, PowerShell)
+        self.copy_cmd_unix_btn = ctk.CTkButton(
+            self.action_frame,
+            text="📋 Copy (Unix)",
+            height=40,
+            width=120,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color="#444",
+            hover_color="#555",
+            state="disabled",
+            command=self.copy_cmd_unix
         )
-        self.ffmpeg_preview.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="ew")
-        self.ffmpeg_preview.insert("1.0", "파일을 선택하면 실행될 FFmpeg 명령어가 표시됩니다")
-        self.ffmpeg_preview.configure(state="disabled")
+        self.copy_cmd_unix_btn.grid(row=0, column=1, padx=2, sticky="w")
 
-        # 7. 실행 섹션
-        self.action_frame = ctk.CTkFrame(encoding_tab, fg_color="transparent")
-        self.action_frame.grid(row=6, column=0, pady=(0, 15), sticky="ew")
-        self.action_frame.grid_columnconfigure(0, weight=1)
-
+        # 시작 버튼 (START)
         self.run_btn = ctk.CTkButton(
             self.action_frame, 
             text="🚀 START", 
-            height=60,
-            font=ctk.CTkFont(size=18, weight="bold"),
+            height=40,
+            font=ctk.CTkFont(size=15, weight="bold"),
             fg_color=self.accent_color,
             hover_color=self.adjust_color_brightness(self.accent_color, 1.2),
             text_color_disabled="white",
             state="disabled",
             command=self.start_encoding
         )
-        self.run_btn.grid(row=0, column=0, padx=10, sticky="ew")
+        self.run_btn.grid(row=0, column=2, padx=(5, 10), sticky="ew")
 
+        # 진행바 및 기타
         self.progress_bar = ctk.CTkProgressBar(self.action_frame)
         self.progress_bar.set(0)
         self.progress_bar.configure(progress_color=self.accent_color)
-        self.progress_bar.grid(row=1, column=0, padx=10, pady=(15, 5), sticky="ew")
+        self.progress_bar.grid(row=1, column=0, columnspan=3, padx=10, pady=(15, 5), sticky="ew")
 
-        # 8. 로그
+        # 8. 로그 (row index 조정)
         self.log_text = ctk.CTkTextbox(
             encoding_tab, 
-            height=100, 
+            height=150, # 로그 영역 조금 더 확장
             font=ctk.CTkFont(family="Consolas", size=12),
             text_color="#00FF00",
             fg_color="#1A1A1A"
         )
-        self.log_text.grid(row=7, column=0, padx=10, pady=(0, 10), sticky="nsew")
-        encoding_tab.grid_rowconfigure(7, weight=1)  # Log area expands
+        self.log_text.grid(row=6, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        encoding_tab.grid_rowconfigure(6, weight=1)  # Log area expands
 
     def init_search_tab(self):
         """검색 탭 UI 구성"""
@@ -1532,21 +1646,112 @@ class MainWindow(ctk.CTk):
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
 
+    def on_codec_change(self, choice):
+        """코덱 변경 시 처리"""
+        # 헤더 항목 선택 시 무시
+        if choice.startswith("---"):
+            self.after(10, lambda: self.codec_var.set(self.previous_codec_label))
+            return
+
+        codec_info = self.codec_data_map.get(choice)
+        if not codec_info:
+            return
+            
+        # 가용성 체크
+        if not codec_info['available']:
+            self.log(f"⚠️ 선택하신 코덱({codec_info['label']})은 현재 시스템에서 사용할 수 없습니다.")
+            # 이전 유효한 선택으로 복구
+            self.after(10, lambda: self.codec_var.set(self.previous_codec_label))
+            return
+
+        # 유효한 선택인 경우 업데이트
+        self.previous_codec_label = choice
+        self.encoder.encoder_type = codec_info['id']
+        
+        # 선택 로그 및 설명 추가
+        self.log(f"코덱 선택: {codec_info['label']}")
+        self.log(f"💡 {codec_info['description']}")
+        
+        # UI 업데이트 (품질 설정, 파일명, 미리보기 등)
+        self.update_quality_ui()
+        self.update_ui_state()
+
+    def _set_slider_value(self, value):
+        """슬라이더 값을 프로그래밍 방식으로 설정하고 이벤트를 트리거합니다."""
+        self.quality_slider.set(value)
+        self.on_slider_change(value)
+
     def on_slider_change(self, value):
         val = int(value)
-        label_map = {
-            18: "(초고화질)",
-            19: "(고화질)",
-            20: "(권장)",
-            23: "(균형점)"
-        }
+        meta = self.encoder.get_quality_metadata()
         
-        suffix = label_map.get(val, "")
-        if 28 <= val <= 30:
-            suffix = "(저용량)"
+        # 권장값 범위 (표준값 주변)
+        std_val = meta.get('default', 23)
+        if val == std_val:
+            status = "(권장)"
+        elif val < std_val:
+            status = "(고화질)"
+        else:
+            status = "(저용량)"
             
-        self.quality_value_label.configure(text=f"현재 값: {val} {suffix}".strip())
+        self.quality_value_label.configure(text=f"현재 값: {val} {status}")
         self.update_ui_state()
+
+    def update_quality_ui(self):
+        """코덱에 따라 화질 설정 UI(레이블, 범위)를 동적으로 업데이트합니다."""
+        meta = self.encoder.get_quality_metadata()
+        
+        # 1. 레이블 업데이트 (예: 화질 설정 (CQ))
+        param_name = meta['label'].split('(')[1].replace(')', '')
+        self.quality_title_label.configure(text=f"화질 설정 ({param_name})")
+        
+        # 2. 슬라이더 범위 업데이트
+        self.quality_slider.configure(
+            from_=meta['min'], 
+            to=meta['max'], 
+            number_of_steps=meta['max'] - meta['min']
+        )
+        
+        
+        # 1.5. 슬라이더 좌/중/우 버튼 업데이트 (클릭 시 해당 값 적용)
+        # 람다 함수 사용 시 루프 변수 캡처 주의 (여기선 명시적 변수라 괜찮음)
+        
+        # 왼쪽 (고화질 = min)
+        self.quality_left_btn.configure(
+            text=f"고화질 ({meta['min']})",
+            command=lambda: self._set_slider_value(meta['min'])
+        )
+        
+        # 가운데 (권장 = default)
+        self.quality_recommend_btn.configure(
+            text=f"권장 ({meta['default']})",
+            command=lambda: self._set_slider_value(meta['default'])
+        )
+        
+        # 오른쪽 (저용량 = max)
+        self.quality_right_btn.configure(
+            text=f"저용량 ({meta['max']})",
+            command=lambda: self._set_slider_value(meta['max'])
+        )
+        
+        # 3. 값 보정 (현재 값이 새 범위를 벗어나면 기본값으로)
+        current_val = self.quality_slider.get()
+        if current_val < meta['min'] or current_val > meta['max']:
+            self.quality_slider.set(meta['default'])
+        
+        # 4. 툴팁 업데이트 (힌트 정보)
+        if 'tooltip' in meta:
+             self.quality_help_tooltip.set_text(meta['tooltip'])
+        else:
+             # Fallback (안전장치)
+             hint_text = meta.get('hint', "")
+             self.quality_help_tooltip.set_text(f"{hint_text}\n\n" + (
+                "- 숫자가 낮을수록 고화질(대용량), 높을수록 저화질(저용량)입니다.\n"
+                "- 목표 화질을 일정하게 유지하기 위해 영상 복잡도에 따라 비트레이트를 조절합니다."
+             ))
+        
+        # 5. 하단 값 레이블 즉시 갱신
+        self.on_slider_change(self.quality_slider.get())
 
     def on_audio_change(self):
         self.update_ui_state()
@@ -1572,18 +1777,6 @@ class MainWindow(ctk.CTk):
         self.output_filename_entry.insert(0, Path(self.output_file).name)
         self.output_filename_entry.configure(state="readonly")
         
-        # FFmpeg 미리보기
-        cmd_preview = self.encoder.get_command_preview(
-            self.input_file,
-            self.output_file,
-            quality,
-            audio_mode
-        )
-        self.ffmpeg_preview.configure(state="normal")
-        self.ffmpeg_preview.delete("1.0", "end")
-        self.ffmpeg_preview.insert("1.0", cmd_preview)
-        self.ffmpeg_preview.configure(state="disabled")
-        
         # 드라이브 용량
         self.update_drive_space_label()
         
@@ -1594,7 +1787,8 @@ class MainWindow(ctk.CTk):
         if not self.encoding_in_progress:
             self.run_btn.configure(state="normal")
             self.edit_output_btn.configure(state="normal")
-            self.copy_btn.configure(state="normal")
+            self.copy_cmd_windows_btn.configure(state="normal")
+            self.copy_cmd_unix_btn.configure(state="normal")
             self.input_folder_btn.configure(state="normal")
             self.output_folder_btn.configure(state="normal")
 
@@ -1725,28 +1919,44 @@ class MainWindow(ctk.CTk):
             self.update_ui_state()
             self.log(f"출력 파일명 변경: {Path(new_output).name}")
 
-    def copy_ffmpeg_command(self):
+    def copy_cmd_windows(self):
+        """Windows CMD 스타일 명령어를 클립보드에 복사"""
+        self._copy_formatted_command("cmd", "윈도우 CMD 스타일")
+
+    def copy_cmd_unix(self):
+        """Unix/Linux Shell 스타일 명령어를 클립보드에 복사"""
+        self._copy_formatted_command("unix", "유닉스/리눅스(Bash/PS) 스타일")
+
+    def _copy_formatted_command(self, style, log_prefix):
+        """공통 명령어 복사 로직"""
         if not self.input_file or not self.output_file:
             return
             
         quality = int(self.quality_slider.get())
         audio_mode = self.audio_mode_map.get(self.audio_var.get(), "copy")
         
-        cmd = self.encoder.build_command(self.input_file, self.output_file, quality, audio_mode)
+        # 1. 포맷팅된 명령어 생성
+        command_str = self.encoder.get_command_preview(
+            self.input_file, 
+            self.output_file, 
+            quality, 
+            audio_mode,
+            overwrite=True,
+            style=style
+        )
         
-        safe_cmd = []
-        for arg in cmd:
-            if ' ' in arg or '\\' in arg or '/' in arg:
-                safe_cmd.append(f'"{arg}"')
-            else:
-                safe_cmd.append(arg)
-        
-        command_str = ' '.join(safe_cmd)
+        # 2. 클립보드 복사
         self.clipboard_clear()
         self.clipboard_append(command_str)
         
-        self.log("FFmpeg 명령어가 클립보드에 복사되었습니다.")
-        messagebox.showinfo("복사 완료", "FFmpeg 명령어가 클립보드에 복사되었습니다.")
+        # 3. 로그창 출력
+        self.log(f"📋 FFmpeg 명령어가 클립보드에 복사되었습니다. ({log_prefix})")
+        self.log(f"명령어:\n{command_str}")
+
+    def copy_ffmpeg_command(self):
+        # 하위 호환성 위해 유지 (필요 시 CMD 스타일로 동작)
+        self.copy_cmd_windows()
+
 
     def start_encoding(self):
         if not self.input_file or self.encoding_in_progress:
