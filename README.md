@@ -5,7 +5,7 @@
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)
-![Status](https://img.shields.io/badge/Status-v0.4.0-blue.svg)
+![Status](https://img.shields.io/badge/Status-v0.5.0-blue.svg)
 
 **"Smart Render, Slim Storage."**
 
@@ -15,7 +15,7 @@
 
 ---
 
-## ✨ 주요 기능 (0.4.0 버전)
+## ✨ 주요 기능 (0.5.0 버전)
 
 - ✅ **자동 GPU 감지**: NVIDIA/AMD/Intel GPU를 자동으로 감지하여 최적의 하드웨어 인코더 선택
 - ✅ **FFmpeg 환경 검사**: FFmpeg 설치 여부를 확인하고 미설치 시 다운로드 안내
@@ -33,8 +33,13 @@
 - ✅ **간편한 UI**: 파일 선택, 화질 조정, 원클릭 변환
 - ✅ **스마트 파일명**: 코덱, 품질, 오디오 코덱 정보가 포함된 출력 파일명 자동 생성 (수정 가능)
 - ✅ **오디오 코덱 감지**: 원본 비디오의 오디오 코덱을 자동 감지하여 파일명에 표시
+- ✅ **코덱별 동적 화질 설정**: 선택한 코덱(NVENC, QSV, AMF, Software)에 따라 화질 파라미터(CQ, ICQ, QP, CRF, qscale)와 범위를 지능적으로 자동 조정 ✨
+- ✅ **상호작용형 화질 프리셋 버튼**: '고화질', '권장', '저용량' 버튼으로 원하는 설정을 즉시 적용 ✨
+- ✅ **다이내믹 기술 도움말**: 코덱 종류에 맞춰 실시간으로 변경되는 상세 화질 가이드(CQ, CRF, QP 등) 제공 ✨
+- ✅ **OS별 맞춤형 명령어 복사**: Windows CMD 전용 및 Unix/Linux/PS를 각각 구분하여 최적화된 터미널 명령어 제공 ✨
+- ✅ **자동 의존성 설치 환경**: `run.py` 실행 시 필수 라이브러리를 자동으로 감지하고 조용히 설치하여 사용자 편의성 극대화 ✨
 - ✅ **FFmpeg 명령어 미리보기**: 실행될 명령어를 사전에 확인 가능
-- ✅ **화질 설정 가이드**: CQ 값에 대한 직관적인 설명 제공
+- ✅ **화질 설정 가이드**: CQ/CRF 값에 대한 직관적인 설명 제공
 - ✅ **실시간 진행률 및 예상 남은 시간**: 인코딩 진행 퍼센트(%)와 예상 남은 시간을 START 버튼에 두 줄로 표시하여 직관성 극대화 ✨
 - ✅ **인코딩 완료 알림**: Windows 10/11 Toast 알림으로 인코딩 완료 및 용량 절감 정보를 실시간으로 알림 ✨
 - ✅ **지능형 용량 알림**: 예상 결과물 크기를 계산하여 드라이브 여유 공간 부족(125% 미만) 시 경고 표시 ✨
@@ -165,8 +170,8 @@ renQoder/
 - [x] v0.1: Initial PoC Release
 - [x] v0.2: Feature enhancement & UI improvement
 - [x] v0.3: 남은 시간 표시, UI 레이아웃 최적화, 입력 필터 확장 및 빌드 자동화
-- [x] v0.4: 메타데이터 분석 엔진 통합, 비정상 파일 감지/필터링 및 정렬 시스템 고도화 ✨
-- [ ] v0.5: 배치 처리, 드래그 앤 드롭
+- [x] v0.5: 코덱별 동적 화질 설정, 상호작용 UI 및 OS별 명령어 복사 지원 ✨
+- [ ] v0.6: 배치 처리, 드래그 앤 드롭
 - [ ] v1.0: 설정 저장, macOS 지원
 - [ ] v1.5: Linux 지원, 크로스 플랫폼 빌드
 - [ ] v2.0: Watch Folder, 멀티 GPU
